@@ -85,12 +85,14 @@ fun ReelGuardHomeScreen() {
     var accessibilityEnabled by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
     var overlayEnabled by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var protectionEnabled by remember { mutableStateOf(ProtectionPreferences.isProtectionEnabled(context)) }
+    var disclosureAccepted by remember { mutableStateOf(ProtectionPreferences.hasAccessibilityDisclosureBeenAccepted(context)) }
     var showAccessibilityDisclosure by remember { mutableStateOf(false) }
 
     fun refreshStatus() {
         accessibilityEnabled = isAccessibilityServiceEnabled(context)
         overlayEnabled = Settings.canDrawOverlays(context)
         protectionEnabled = ProtectionPreferences.isProtectionEnabled(context)
+        disclosureAccepted = ProtectionPreferences.hasAccessibilityDisclosureBeenAccepted(context)
     }
 
     fun openAccessibilitySettings() {
@@ -214,6 +216,7 @@ fun ReelGuardHomeScreen() {
                     text = when {
                         isProtected -> "ReelGuard now works automatically when you use Instagram. You do not need to keep this screen open."
                         !accessibilityEnabled -> "Enable ReelGuard's Accessibility Service so it can recognize where a Reel was opened."
+                        !disclosureAccepted -> "Review the Accessibility disclosure before activating protection."
                         !overlayEnabled -> "Allow ReelGuard to appear over Instagram so it can show the mindful pause when needed."
                         else -> "Your permissions are ready. Activate protection to start using ReelGuard."
                     },
@@ -224,7 +227,7 @@ fun ReelGuardHomeScreen() {
                 Button(
                     onClick = {
                         when {
-                            !accessibilityEnabled -> showAccessibilityDisclosure = true
+                            !accessibilityEnabled || !disclosureAccepted -> showAccessibilityDisclosure = true
                             !overlayEnabled -> openOverlaySettings()
                             else -> {
                                 ProtectionPreferences.setProtectionEnabled(context, !protectionEnabled)
@@ -249,7 +252,7 @@ fun ReelGuardHomeScreen() {
                     Spacer(modifier = Modifier.size(9.dp))
                     Text(
                         text = when {
-                            !accessibilityEnabled -> "Set up protection"
+                            !accessibilityEnabled || !disclosureAccepted -> "Review access and continue"
                             !overlayEnabled -> "Allow display over other apps"
                             isProtected -> "Pause protection"
                             else -> "Activate protection"
@@ -267,11 +270,11 @@ fun ReelGuardHomeScreen() {
                 number = "01",
                 icon = Icons.Outlined.AccessibilityNew,
                 title = "Accessibility Service",
-                description = "Recognizes Instagram screens locally so ReelGuard can distinguish a Reel opened from a direct message from algorithmic Reels.",
+                description = if (isSamsung && !accessibilityEnabled) "Recognizes Instagram screens locally. If Android says this is a restricted setting, open App info → ⋮ → Allow restricted settings, then return here." else "Recognizes Instagram screens locally so ReelGuard can distinguish a Reel opened from a direct message from algorithmic Reels.",
                 isComplete = accessibilityEnabled,
                 actionLabel = if (accessibilityEnabled) "Manage" else "Enable",
                 onAction = {
-                    if (accessibilityEnabled) openAccessibilitySettings()
+                    if (accessibilityEnabled && disclosureAccepted) openAccessibilitySettings()
                     else showAccessibilityDisclosure = true
                 },
                 secondaryLabel = if (!accessibilityEnabled) "App info" else null,
@@ -313,7 +316,7 @@ fun ReelGuardHomeScreen() {
                         fontSize = 14.sp
                     )
                     Text(
-                        text = "After setup and activation, just open Instagram and use it normally. ReelGuard runs in the background. The Snap UI developer control has been removed from the user experience.",
+                        text = "After setup and activation, just open Instagram and use it normally. ReelGuard runs automatically. There is no floating control and nothing to press inside Instagram.",
                         color = ReelGuardColors.TextSecondary,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -369,7 +372,7 @@ fun ReelGuardHomeScreen() {
         }
 
         Text(
-            text = "ReelGuard processes the visible Instagram interface locally on this device. It does not upload screen content.",
+            text = "ReelGuard reads visible Instagram interface elements locally and observes app-window changes only to dismiss its own pause screen when you leave Instagram. It does not read other apps’ screen content or upload screen content.",
             color = ReelGuardColors.TextSecondary,
             fontSize = 11.sp,
             textAlign = TextAlign.Center,
