@@ -1,15 +1,16 @@
 package com.reelguard.app.ui.theme
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -24,21 +25,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 object ReelGuardColors {
-    val Background = Color(0xFFE5E8ED)
-    val Surface = Color(0xFFE8EBF0)
-    val SurfaceRaised = Color(0xFFF0F2F5)
-    val SurfacePressed = Color(0xFFDCE1E7)
-    val Border = Color(0xFFD0D6DE)
+    val Background = Color(0xFFE4E8EE)
+    val Surface = Color(0xFFE7EBF1)
+    val SurfaceRaised = Color(0xFFF4F6F9)
+    val SurfacePressed = Color(0xFFD8E0E9)
+    val Border = Color(0xFFC9D2DD)
     val Highlight = Color(0xFFFFFFFF)
-    val Shadow = Color(0xFFB9C1CB)
+    val Shadow = Color(0xFFAEB9C6)
 
-    val TextPrimary = Color(0xFF303943)
-    val TextSecondary = Color(0xFF737E8B)
-    val TextMuted = Color(0xFF929BA6)
+    val TextPrimary = Color(0xFF2E3946)
+    val TextSecondary = Color(0xFF6C7887)
+    val TextMuted = Color(0xFF8994A1)
 
-    val Accent = Color(0xFF566474)
-    val AccentDark = Color(0xFF3D4B5A)
-    val AccentMuted = Color(0xFFD8DFE7)
+    val Accent = Color(0xFF52677B)
+    val AccentDark = Color(0xFF34485A)
+    val AccentMuted = Color(0xFFD4DEE8)
 
     val Emerald = Color(0xFF36836A)
     val EmeraldSurface = Color(0xFFDCEBE4)
@@ -143,31 +144,54 @@ fun NeumorphicPanel(
     elevation: Dp = 13.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Surface(
-        modifier = modifier.shadow(
-            elevation = elevation,
-            shape = shape,
-            ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.72f),
-            spotColor = ReelGuardColors.Shadow.copy(alpha = 0.8f)
-        ),
-        shape = shape,
-        color = Color.Transparent,
-        border = BorderStroke(
-            1.dp,
-            Brush.linearGradient(
-                listOf(
-                    ReelGuardColors.Highlight.copy(alpha = 0.92f),
-                    ReelGuardColors.Border.copy(alpha = 0.88f)
+    Box(modifier = modifier) {
+        // Offset graphite and pearl shadows create the light-source contrast
+        // that makes the surface feel moulded into the same soft material.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .offset(x = 6.dp, y = 7.dp)
+                .shadow(
+                    elevation = elevation,
+                    shape = shape,
+                    clip = false,
+                    ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.76f),
+                    spotColor = ReelGuardColors.Shadow.copy(alpha = 0.88f)
                 )
-            )
         )
-    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .offset(x = (-5).dp, y = (-5).dp)
+                .shadow(
+                    elevation = elevation * 0.78f,
+                    shape = shape,
+                    clip = false,
+                    ambientColor = Color.White.copy(alpha = 0.96f),
+                    spotColor = Color.White.copy(alpha = 0.94f)
+                )
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        listOf(ReelGuardColors.SurfaceRaised, ReelGuardColors.Surface)
+                        colorStops = arrayOf(
+                            0f to Color(0xFFF7F9FB),
+                            0.48f to ReelGuardColors.SurfaceRaised,
+                            1f to Color(0xFFE2E7EE)
+                        )
+                    ),
+                    shape
+                )
+                .border(
+                    1.dp,
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.98f),
+                            ReelGuardColors.Border.copy(alpha = 0.88f),
+                            Color.White.copy(alpha = 0.58f)
+                        )
                     ),
                     shape
                 )
