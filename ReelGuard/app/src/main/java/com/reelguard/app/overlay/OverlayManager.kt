@@ -10,8 +10,13 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,11 +34,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -55,6 +58,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.reelguard.app.ui.theme.ReelGuardColors
+import com.reelguard.app.ui.theme.NeumorphicPanel
 import com.reelguard.app.ui.theme.ReelGuardTheme
 
 private enum class OverlayStep {
@@ -119,11 +123,7 @@ class OverlayManager(private val context: Context) {
         val view = object : FrameLayout(context) {
             override fun dispatchKeyEvent(event: KeyEvent): Boolean {
                 if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                    if (currentStep == OverlayStep.TIME_LIMIT) {
-                        currentStep = OverlayStep.CONFIRMATION
-                    } else {
-                        onCancelCallback?.invoke()
-                    }
+                    onCancelCallback?.invoke()
                     return true
                 }
                 return super.dispatchKeyEvent(event)
@@ -143,7 +143,6 @@ class OverlayManager(private val context: Context) {
                                 step = currentStep,
                                 onContinueAnyway = { onContinueCallback?.invoke() },
                                 onCancel = { onCancelCallback?.invoke() },
-                                onGoBack = { currentStep = OverlayStep.CONFIRMATION },
                                 onSelectMinutes = { selected -> onSelectMinutesCallback?.invoke(selected) }
                             )
                         }
@@ -206,7 +205,6 @@ private fun BlockingOverlayContent(
     step: OverlayStep,
     onContinueAnyway: () -> Unit,
     onCancel: () -> Unit,
-    onGoBack: () -> Unit,
     onSelectMinutes: (Int) -> Unit
 ) {
     Box(
@@ -216,22 +214,11 @@ private fun BlockingOverlayContent(
             .padding(horizontal = 22.dp, vertical = 28.dp),
         contentAlignment = Alignment.Center
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 440.dp)
-                .shadow(
-                    elevation = 20.dp,
-                    shape = RoundedCornerShape(27.dp),
-                    ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.75f),
-                    spotColor = ReelGuardColors.Shadow
-                ),
-            shape = RoundedCornerShape(27.dp),
-            color = ReelGuardColors.SurfaceRaised,
-            border = BorderStroke(
-                1.dp,
-                Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border))
-            )
+        NeumorphicPanel(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 440.dp),
+            padding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+            shape = RoundedCornerShape(30.dp),
+            elevation = 23.dp
         ) {
             when (step) {
                 OverlayStep.CONFIRMATION -> ConfirmationStep(
@@ -240,10 +227,141 @@ private fun BlockingOverlayContent(
                 )
                 OverlayStep.TIME_LIMIT -> TimeLimitStep(
                     onSelectMinutes = onSelectMinutes,
-                    onCancel = onGoBack
+                    onCancel = onCancel
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun TactileButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    primary: Boolean,
+    onClick: () -> Unit,
+    height: androidx.compose.ui.unit.Dp = 52.dp
+) {
+    val interactionSource = androidx.compose.runtime.remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val depth by animateDpAsState(
+        targetValue = if (pressed) 1.dp else if (primary) 11.dp else 7.dp,
+        animationSpec = tween(125),
+        label = "overlay-button-depth"
+    )
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        animationSpec = tween(125),
+        label = "overlay-button-press"
+    )
+    val shape = RoundedCornerShape(15.dp)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            .scale(pressScale)
+            .shadow(
+                elevation = depth,
+                shape = shape,
+                ambientColor = if (primary) ReelGuardColors.AccentDark.copy(alpha = 0.38f) else ReelGuardColors.Shadow.copy(alpha = 0.72f),
+                spotColor = if (primary) ReelGuardColors.AccentDark.copy(alpha = 0.5f) else ReelGuardColors.Shadow
+            )
+            .background(
+                if (primary) {
+                    Brush.verticalGradient(listOf(Color(0xFF657B91), Color(0xFF354657), Color(0xFF2F3E4D)))
+                } else {
+                    Brush.verticalGradient(listOf(Color(0xFFF6F8FB), Color(0xFFE3E8EF), Color(0xFFDCE2E9)))
+                },
+                shape
+            )
+            .border(
+                1.dp,
+                if (primary) {
+                    Brush.linearGradient(listOf(Color.White.copy(alpha = 0.62f), Color.White.copy(alpha = 0.08f)))
+                } else {
+                    Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border))
+                },
+                shape
+            )
+            .clip(shape)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(horizontal = 18.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (primary) Color.White else ReelGuardColors.AccentDark,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        Text(
+            text = text,
+            color = if (primary) Color.White else ReelGuardColors.TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp
+        )
+    }
+}
+
+@Composable
+private fun DurationChoice(
+    modifier: Modifier,
+    minutes: Int,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val interactionSource = androidx.compose.runtime.remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val depth by animateDpAsState(
+        targetValue = if (selected || pressed) 1.dp else 7.dp,
+        animationSpec = tween(130),
+        label = "duration-choice-depth"
+    )
+    val shape = RoundedCornerShape(14.dp)
+
+    Box(
+        modifier = modifier
+            .height(58.dp)
+            .shadow(
+                elevation = depth,
+                shape = shape,
+                ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.72f),
+                spotColor = ReelGuardColors.Shadow.copy(alpha = 0.82f)
+            )
+            .background(
+                Brush.verticalGradient(
+                    if (selected) {
+                        listOf(Color(0xFFD7E1EA), ReelGuardColors.AccentMuted, Color(0xFFD6DFE8))
+                    } else {
+                        listOf(Color(0xFFF7F9FB), ReelGuardColors.SurfaceRaised, Color(0xFFE1E6ED))
+                    }
+                ),
+                shape
+            )
+            .border(
+                1.dp,
+                if (selected) {
+                    Brush.linearGradient(listOf(ReelGuardColors.Accent.copy(alpha = 0.82f), Color.White.copy(alpha = 0.6f)))
+                } else {
+                    Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border))
+                },
+                shape
+            )
+            .clip(shape)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "$minutes min",
+            color = if (selected) ReelGuardColors.AccentDark else ReelGuardColors.TextSecondary,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+            fontSize = 16.sp
+        )
     }
 }
 
@@ -290,39 +408,21 @@ private fun ConfirmationStep(
         )
         Spacer(modifier = Modifier.height(23.dp))
 
-        Button(
-            onClick = onContinueAnyway,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            elevation = ButtonDefaults.buttonElevation(
-                defaultElevation = 8.dp,
-                pressedElevation = 2.dp
-            ),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = ReelGuardColors.AccentDark,
-                contentColor = Color.White
-            )
-        ) {
-            Icon(Icons.Outlined.HourglassTop, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Choose a time limit", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-        }
+        TactileButton(
+            text = "Choose a time limit",
+            icon = Icons.Outlined.HourglassTop,
+            primary = true,
+            onClick = onContinueAnyway
+        )
 
-        Spacer(modifier = Modifier.height(10.dp))
-        OutlinedButton(
+        Spacer(modifier = Modifier.height(11.dp))
+        TactileButton(
+            text = "Leave Reels",
+            icon = Icons.Outlined.ArrowBack,
+            primary = false,
             onClick = onCancel,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color.White),
-            colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = ReelGuardColors.SurfacePressed,
-                contentColor = ReelGuardColors.TextPrimary
-            )
-        ) {
-            Icon(Icons.Outlined.ArrowBack, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(modifier = Modifier.width(7.dp))
-            Text("Leave Reels", fontWeight = FontWeight.Medium)
-        }
+            height = 50.dp
+        )
         Spacer(modifier = Modifier.height(7.dp))
         Text(
             text = "Friend-shared Reels in your DMs remain available.",
@@ -380,58 +480,30 @@ private fun TimeLimitStep(
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                     rowDurations.forEach { minutes ->
                         val selected = selectedMinutes == minutes
-                        Surface(
-                            modifier = Modifier.weight(1f).height(58.dp).clickable { selectedMinutes = minutes },
-                            shape = RoundedCornerShape(11.dp),
-                            color = if (selected) ReelGuardColors.AccentMuted else ReelGuardColors.SurfaceRaised,
-                            shadowElevation = if (selected) 2.dp else 6.dp,
-                            border = BorderStroke(
-                                1.dp,
-                                if (selected) ReelGuardColors.Accent else Color.White
-                            )
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "$minutes min",
-                                    color = if (selected) ReelGuardColors.TextPrimary else ReelGuardColors.TextSecondary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 16.sp
-                                )
-                            }
-                        }
+                        DurationChoice(
+                            modifier = Modifier.weight(1f),
+                            minutes = minutes,
+                            selected = selected,
+                            onClick = { selectedMinutes = minutes }
+                        )
                     }
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
-        Button(
-            onClick = { onSelectMinutes(selectedMinutes) },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(11.dp),
-            elevation = ButtonDefaults.buttonElevation(
-                defaultElevation = 8.dp,
-                pressedElevation = 2.dp
-            ),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = ReelGuardColors.AccentDark,
-                contentColor = Color.White
-            )
-        ) {
-            Text("Start $selectedMinutes-minute session", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedButton(
+        TactileButton(
+            text = "Start $selectedMinutes-minute session",
+            primary = true,
+            onClick = { onSelectMinutes(selectedMinutes) }
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        TactileButton(
+            text = "Leave Reels",
+            icon = Icons.Outlined.ArrowBack,
+            primary = false,
             onClick = onCancel,
-            modifier = Modifier.fillMaxWidth().height(46.dp),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color.White),
-            colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = ReelGuardColors.SurfacePressed,
-                contentColor = ReelGuardColors.TextSecondary
-            )
-        ) {
-            Text("Go back", fontWeight = FontWeight.Medium)
-        }
+            height = 48.dp
+        )
     }
 }
