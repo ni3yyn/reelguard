@@ -147,6 +147,7 @@ class ReelGuardStateMachine(
                 GuardPhase.DM_SINGLE_REEL -> snapshot = GuardSnapshot()
                 GuardPhase.DM_THREAD -> snapshot = GuardSnapshot()
                 GuardPhase.TIMED_UNLOCKED -> Unit
+                GuardPhase.EXITING_TO_HOME -> Unit
                 GuardPhase.IDLE -> Unit
             }
             return effects
