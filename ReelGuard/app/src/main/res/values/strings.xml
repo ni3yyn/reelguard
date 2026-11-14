@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ReelGuard</string>
+    <string name="accessibility_service_label">ReelGuard Mindful Reels Blocker</string>
+    <string name="accessibility_service_description">Monitors Instagram navigation locally on your device to keep friend-shared DM Reels uninterrupted while gating algorithmic Reels behind a mindful pause and time limit. No data leaves your device.</string>
+</resources>

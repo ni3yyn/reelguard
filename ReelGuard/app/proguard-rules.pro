@@ -1,0 +1,2 @@
+-keep class com.reelguard.app.service.ReelGuardAccessibilityService { *; }
+-keep class com.reelguard.app.overlay.** { *; }
