@@ -30,6 +30,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,6 +90,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -373,6 +377,20 @@ private fun AppHeader(
     activeTab: AppTab,
     onSettings: () -> Unit
 ) {
+    val settingsInteraction = remember { MutableInteractionSource() }
+    val settingsPressed by settingsInteraction.collectIsPressedAsState()
+    val settingsHovered by settingsInteraction.collectIsHoveredAsState()
+    val settingsFocused by settingsInteraction.collectIsFocusedAsState()
+    val settingsHighlighted = settingsHovered || settingsFocused
+    val settingsScale by animateFloatAsState(
+        targetValue = when {
+            settingsPressed -> 0.96f
+            settingsHighlighted -> 1.025f
+            else -> 1f
+        },
+        animationSpec = tween(150, easing = FastOutSlowInEasing),
+        label = "header-settings-feedback"
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -389,13 +407,24 @@ private fun AppHeader(
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 1.65.sp
             )
-            Text(activeTab.subtitle, color = ReelGuardColors.TextSecondary, fontSize = 11.sp)
+            Text(activeTab.subtitle, color = ReelGuardColors.TextSecondary, fontSize = 12.sp)
         }
         if (activeTab != AppTab.SETTINGS) {
             Row(
                 modifier = Modifier
+                    .scale(settingsScale)
                     .clip(CircleShape)
-                    .clickable(onClick = onSettings)
+                    .background(
+                        if (settingsHighlighted) ReelGuardColors.SurfacePressed.copy(alpha = 0.72f)
+                        else Color.Transparent,
+                        CircleShape
+                    )
+                    .clickable(
+                        interactionSource = settingsInteraction,
+                        indication = null,
+                        role = Role.Button,
+                        onClick = onSettings
+                    )
                     .padding(horizontal = 9.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -856,9 +885,9 @@ private fun PageHeading(
         Text(
             eyebrow,
             color = ReelGuardColors.Accent,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 1.9.sp
+            letterSpacing = 1.65.sp
         )
         Text(title, color = ReelGuardColors.TextPrimary, style = MaterialTheme.typography.displaySmall)
         Text(description, color = ReelGuardColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
@@ -922,33 +951,19 @@ private fun ProtectionOrb(
 
 @Composable
 private fun StatusLabel(isProtected: Boolean) {
-    val infinite = rememberInfiniteTransition(label = "status-pulse")
-    val pulse by infinite.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.55f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1100),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "status-alpha"
-    )
+    val statusColor = if (isProtected) ReelGuardColors.Emerald else ReelGuardColors.Amber
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(
             Modifier
                 .size(7.dp)
-                .background(
-                    (if (isProtected) ReelGuardColors.Emerald else ReelGuardColors.Amber).copy(
-                        alpha = if (isProtected) pulse else 1f
-                    ),
-                    CircleShape
-                )
+                .background(statusColor, CircleShape)
         )
         Text(
             if (isProtected) "PROTECTION ACTIVE" else "NOT ACTIVE",
-            color = if (isProtected) ReelGuardColors.Emerald else ReelGuardColors.Amber,
-            fontSize = 10.sp,
+            color = statusColor,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 1.1.sp
+            letterSpacing = 1.sp
         )
     }
 }
@@ -984,13 +999,45 @@ private fun PermissionStep(
     actionLabel: String,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val focused by interactionSource.collectIsFocusedAsState()
+    val highlighted = hovered || focused
+    val scale by animateFloatAsState(
+        targetValue = when {
+            pressed -> 0.986f
+            highlighted -> 1.008f
+            else -> 1f
+        },
+        animationSpec = tween(140, easing = FastOutSlowInEasing),
+        label = "permission-step-feedback"
+    )
+    val depth by androidx.compose.animation.core.animateDpAsState(
+        targetValue = when {
+            pressed -> 2.dp
+            highlighted -> 11.dp
+            else -> 8.dp
+        },
+        animationSpec = tween(140),
+        label = "permission-step-depth"
+    )
     NeumorphicPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            ),
         padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 13.dp),
         shape = RoundedCornerShape(19.dp),
-        elevation = 8.dp
+        elevation = depth
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -1081,13 +1128,48 @@ private fun SettingsRow(
     isComplete: Boolean,
     onClick: (() -> Unit)?
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val focused by interactionSource.collectIsFocusedAsState()
+    val highlighted = onClick != null && (hovered || focused)
+    val scale by animateFloatAsState(
+        targetValue = when {
+            pressed -> 0.986f
+            highlighted -> 1.008f
+            else -> 1f
+        },
+        animationSpec = tween(140, easing = FastOutSlowInEasing),
+        label = "settings-row-feedback"
+    )
+    val depth by androidx.compose.animation.core.animateDpAsState(
+        targetValue = when {
+            pressed -> 2.dp
+            highlighted -> 10.dp
+            else -> 7.dp
+        },
+        animationSpec = tween(140),
+        label = "settings-row-depth"
+    )
     NeumorphicPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        role = Role.Button
+                    ) { onClick() }
+                } else Modifier
+            ),
         padding = androidx.compose.foundation.layout.PaddingValues(14.dp),
         shape = RoundedCornerShape(18.dp),
-        elevation = 7.dp
+        elevation = depth
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().clickable(enabled = onClick != null) { onClick?.invoke() },
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1153,16 +1235,32 @@ private fun NeumorphicPrimaryButton(
     val shape = RoundedCornerShape(17.dp)
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val focused by interactionSource.collectIsFocusedAsState()
+    val highlighted = hovered || focused
     val pressScale by animateFloatAsState(
-        targetValue = if (pressed) 0.975f else 1f,
-        animationSpec = tween(130, easing = FastOutSlowInEasing),
+        targetValue = when {
+            pressed -> 0.975f
+            highlighted -> 1.014f
+            else -> 1f
+        },
+        animationSpec = tween(120, easing = FastOutSlowInEasing),
         label = "primary-button-press"
     )
     val depth by androidx.compose.animation.core.animateDpAsState(
-        targetValue = if (pressed) 1.dp else 12.dp,
-        animationSpec = tween(130),
+        targetValue = when {
+            pressed -> 1.dp
+            highlighted -> 15.dp
+            else -> 12.dp
+        },
+        animationSpec = tween(120),
         label = "primary-button-depth"
     )
+    val buttonColors = if (highlighted) {
+        listOf(Color(0xFF7D92A6), Color(0xFF4B6379), Color(0xFF344B60))
+    } else {
+        listOf(Color(0xFF71869B), Color(0xFF43596E), ReelGuardColors.AccentDark)
+    }
     Row(
         modifier = modifier
             .height(56.dp)
@@ -1173,13 +1271,25 @@ private fun NeumorphicPrimaryButton(
                 ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.64f),
                 spotColor = ReelGuardColors.AccentDark.copy(alpha = 0.4f)
             )
-            .background(
-                Brush.verticalGradient(listOf(Color(0xFF71869B), Color(0xFF43596E), ReelGuardColors.AccentDark)),
+            .background(Brush.verticalGradient(buttonColors), shape)
+            .border(
+                1.dp,
+                Brush.linearGradient(
+                    if (highlighted) {
+                        listOf(Color.White.copy(alpha = 0.92f), Color.White.copy(alpha = 0.24f))
+                    } else {
+                        listOf(Color.White.copy(alpha = 0.72f), Color.White.copy(alpha = 0.08f))
+                    }
+                ),
                 shape
             )
-            .border(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.72f), Color.White.copy(alpha = 0.08f))), shape)
             .clip(shape)
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            )
             .padding(horizontal = 18.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
@@ -1244,13 +1354,16 @@ private fun NavigationItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val focused by interactionSource.collectIsFocusedAsState()
+    val highlighted = hovered || focused
     val scale by animateFloatAsState(
         targetValue = when {
             pressed -> 0.965f
-            selected -> 1.025f
+            highlighted -> 1.015f
             else -> 1f
         },
-        animationSpec = tween(180, easing = FastOutSlowInEasing),
+        animationSpec = tween(145, easing = FastOutSlowInEasing),
         label = "navigation-scale"
     )
     val shape = RoundedCornerShape(17.dp)
@@ -1259,19 +1372,34 @@ private fun NavigationItem(
             .scale(scale)
             .clip(shape)
             .background(
-                if (selected) {
-                    Brush.verticalGradient(listOf(Color(0xFFD6DEE7), ReelGuardColors.SurfacePressed, Color(0xFFDCE3EB)))
-                } else {
-                    Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                when {
+                    selected -> Brush.verticalGradient(
+                        listOf(Color(0xFFD4DDE7), ReelGuardColors.SurfacePressed, Color(0xFFDCE3EB))
+                    )
+                    highlighted -> Brush.verticalGradient(
+                        listOf(Color(0xFFF1F4F8), ReelGuardColors.SurfaceRaised, Color(0xFFE3E8EF))
+                    )
+                    else -> Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
                 },
                 shape
             )
             .border(
-                if (selected) 1.dp else 0.dp,
-                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.9f), ReelGuardColors.Border.copy(alpha = 0.55f))),
+                if (selected) 1.dp else if (highlighted) 1.dp else 0.dp,
+                Brush.linearGradient(
+                    if (selected) {
+                        listOf(Color.White.copy(alpha = 0.96f), ReelGuardColors.Accent.copy(alpha = 0.38f))
+                    } else {
+                        listOf(Color.White.copy(alpha = 0.82f), ReelGuardColors.Border.copy(alpha = 0.45f))
+                    }
+                ),
                 shape
             )
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick
+            )
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1279,14 +1407,15 @@ private fun NavigationItem(
         Icon(
             icon,
             contentDescription = tab.title,
-            tint = if (selected) ReelGuardColors.AccentDark else ReelGuardColors.TextMuted,
+            tint = if (selected || highlighted) ReelGuardColors.AccentDark else ReelGuardColors.TextMuted,
             modifier = Modifier.size(20.dp)
         )
         Text(
             tab.title,
             color = if (selected) ReelGuardColors.AccentDark else ReelGuardColors.TextSecondary,
-            fontSize = 10.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            letterSpacing = 0.1.sp
         )
     }
 }
@@ -1297,6 +1426,24 @@ private fun NeumorphicSwitch(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val focused by interactionSource.collectIsFocusedAsState()
+    val trackScale by animateFloatAsState(
+        targetValue = when {
+            pressed -> 0.96f
+            hovered || focused -> 1.015f
+            else -> 1f
+        },
+        animationSpec = tween(120, easing = FastOutSlowInEasing),
+        label = "switch-track-feedback"
+    )
+    val trackDepth by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (pressed) 2.dp else if (hovered || focused) 9.dp else 6.dp,
+        animationSpec = tween(120),
+        label = "switch-track-depth"
+    )
     val thumbOffset by androidx.compose.animation.core.animateDpAsState(
         targetValue = if (checked) 22.dp else 0.dp,
         animationSpec = tween(220, easing = FastOutSlowInEasing),
@@ -1306,7 +1453,8 @@ private fun NeumorphicSwitch(
     Box(
         modifier = Modifier
             .size(width = 55.dp, height = 32.dp)
-            .shadow(6.dp, trackShape, ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.72f), spotColor = ReelGuardColors.Shadow)
+            .scale(trackScale)
+            .shadow(trackDepth, trackShape, ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.72f), spotColor = ReelGuardColors.Shadow)
             .background(
                 Brush.verticalGradient(
                     if (checked) listOf(Color(0xFFD5E9E0), ReelGuardColors.EmeraldSurface, Color(0xFFD0E3DA))
@@ -1316,7 +1464,14 @@ private fun NeumorphicSwitch(
             )
             .border(1.dp, Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border)), trackShape)
             .clip(trackShape)
-            .clickable(enabled = enabled, onClick = onClick)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Switch,
+                onValueChange = { onClick() }
+            )
             .padding(3.dp)
     ) {
         Box(
