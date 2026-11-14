@@ -81,6 +81,59 @@ class ReelGuardStateMachineTest {
     }
 
     @Test
+    fun dmViewerBackStackMarker_allowsReelWithoutDetectingCardClick() {
+        val machine = ReelGuardStateMachine()
+
+        val openEffects = machine.onScreenEvaluated(
+            ScreenSignals(
+                isInDmThread = true,
+                isInReelsViewer = true,
+                isReelsTabSelected = true,
+                isDmOriginReel = true
+            ),
+            nowMs = 12_000L
+        )
+
+        assertTrue(openEffects.isEmpty())
+        assertEquals(GuardPhase.DM_SINGLE_REEL, machine.snapshot.phase)
+
+        // Instagram can drop the hidden toolbar from later accessibility snapshots.
+        // Once the DM-origin route was established, tab-selection updates must not relock it.
+        assertTrue(
+            machine.onScreenEvaluated(
+                ScreenSignals(isInReelsViewer = true, isReelsTabSelected = true),
+                nowMs = 12_200L
+            ).isEmpty()
+        )
+        assertEquals(GuardPhase.DM_SINGLE_REEL, machine.snapshot.phase)
+        assertEquals(
+            GuardEffect.ExecuteBackToDm,
+            machine.onVerticalScrollDetected(
+                nowMs = 12_500L,
+                scrollDeltaY = 360,
+                fromIndex = 0,
+                toIndex = 1
+            )
+        )
+    }
+
+    @Test
+    fun feedViewerWithoutDmNavigationMarker_remainsBlockedAfterVisitingDm() {
+        val machine = ReelGuardStateMachine()
+        machine.onScreenEvaluated(ScreenSignals(isInDmThread = true), nowMs = 20_000L)
+        machine.onScreenEvaluated(ScreenSignals(), nowMs = 20_100L)
+
+        assertEquals(
+            listOf(GuardEffect.ShowConfirmationOverlay),
+            machine.onScreenEvaluated(
+                ScreenSignals(isInReelsViewer = true),
+                nowMs = 20_200L
+            )
+        )
+        assertEquals(GuardPhase.ALGORITHMIC_BLOCKED, machine.snapshot.phase)
+    }
+
+    @Test
     fun algorithmicReel_showsClearIntervention_andCancelReturnsHome() {
         val machine = ReelGuardStateMachine()
         val effects = machine.onScreenEvaluated(

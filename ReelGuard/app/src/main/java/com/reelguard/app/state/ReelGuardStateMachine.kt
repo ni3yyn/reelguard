@@ -15,7 +15,8 @@ data class ScreenSignals(
     val isInReelsViewer: Boolean = false,
     val isReelsTabSelected: Boolean = false,
     val isExploreOrStoryReel: Boolean = false,
-    val isHomeSuggestedFullScreenReel: Boolean = false
+    val isHomeSuggestedFullScreenReel: Boolean = false,
+    val isDmOriginReel: Boolean = false
 ) {
     val isReelsSurface: Boolean
         get() = isInReelsViewer ||
@@ -110,6 +111,26 @@ class ReelGuardStateMachine(
                 snapshot = GuardSnapshot()
                 effects += GuardEffect.DismissOverlay
             }
+            return effects
+        }
+
+        // This is stronger than tab selection or a tap event: Instagram's DM viewer
+        // retains a hidden direct_thread_toolbar beside its clips viewer container.
+        // Trust that route provenance even when clips_tab is also reported selected.
+        if (signals.isDmOriginReel && signals.isInReelsViewer) {
+            val hadBlockingOverlay =
+                snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED ||
+                    snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
+            val mountedAtMs = if (
+                snapshot.phase == GuardPhase.DM_SINGLE_REEL && snapshot.dmReelMountedAtMs > 0L
+            ) snapshot.dmReelMountedAtMs else nowMs
+
+            snapshot = snapshot.copy(
+                phase = GuardPhase.DM_SINGLE_REEL,
+                pendingDmReelClickUntilMs = 0L,
+                dmReelMountedAtMs = mountedAtMs
+            )
+            if (hadBlockingOverlay) effects += GuardEffect.DismissOverlay
             return effects
         }
 

@@ -6,12 +6,14 @@ import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.reelguard.app.data.ProtectionPreferences
 import com.reelguard.app.overlay.OverlayManager
 import com.reelguard.app.state.GuardEffect
+import com.reelguard.app.state.InstagramNavigationClassifier
 import com.reelguard.app.state.GuardPhase
 import com.reelguard.app.state.ReelGuardStateMachine
 import com.reelguard.app.state.ScreenSignals
@@ -31,6 +33,7 @@ class ReelGuardAccessibilityService : AccessibilityService() {
     private var overlayManager: OverlayManager? = null
     private var activeTimer: CountDownTimer? = null
     private var lastScreenSignals = ScreenSignals()
+    private var lastLoggedViewerRoute: String? = null
     private var instagramForeground = false
     private var exitNavigationPending = false
     private var exitNavigationInProgress = false
@@ -362,32 +365,17 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         if (root.packageName?.toString() != INSTAGRAM_PACKAGE) return false
         if (!detectDmThread(root, event.className?.toString().orEmpty())) return false
 
-        val source = runCatching { event.source }.getOrNull()
-        if (source != null) {
-            val isSharedReelNode: (AccessibilityNodeInfo) -> Boolean = { node ->
-                val id = node.viewIdResourceName.orEmpty().lowercase()
-                val description = node.contentDescription?.toString().orEmpty().lowercase()
-                val text = node.text?.toString().orEmpty().lowercase()
-                id.contains("direct_reel") ||
-                    id.contains("reel_share") ||
-                    id.contains("clips_share") ||
-                    id.contains("media_share") ||
-                    description.contains("reel") ||
-                    description.contains("shared video") ||
-                    text.contains("watch reel")
-            }
-
-            // Instagram often reports the deepest image/text child as the click source.
-            // The Reel/share identity can live on its clickable message-bubble ancestor.
-            val matched = ancestorMatches(source, maxDepth = 7, predicate = isSharedReelNode) ||
-                subtreeMatches(source, maxDepth = 6, maxNodes = 64, predicate = isSharedReelNode)
-            safeRecycle(source)
-            if (matched) return true
+        val source = runCatching { event.source }.getOrNull() ?: return false
+        val isSharedReelPreview: (AccessibilityNodeInfo) -> Boolean = { node ->
+            InstagramNavigationClassifier.isDmSharedReelPreview(node.viewIdResourceName)
         }
 
-        val eventText = event.text.joinToString(" ").lowercase()
-        val eventDescription = event.contentDescription?.toString().orEmpty().lowercase()
-        return eventDescription.contains("reel") || eventText.contains("reel")
+        // Instagram reports the thumbnail or nested text as the click source. The stable
+        // clips_share_preview_container ID usually lives on a clickable ancestor.
+        val matched = ancestorMatches(source, maxDepth = 8, predicate = isSharedReelPreview) ||
+            subtreeMatches(source, maxDepth = 6, maxNodes = 64, predicate = isSharedReelPreview)
+        safeRecycle(source)
+        return matched
     }
 
     private fun ancestorMatches(
@@ -422,17 +410,25 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         var exploreOrStoryReel = false
         var homeSuggestedFullScreenReel = false
 
+        // Instagram's DM-opened Reel keeps direct_thread_toolbar as a hidden sibling of
+        // clips_viewer_fragment_container inside the content host. Do not discard invisible
+        // nodes here: that hidden toolbar is the navigation/back-stack provenance marker.
+        val contentChildViewIds = mutableSetOf<String>()
         var visited = 0
-        val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
-        queue.add(root to 0)
-
+        val queue = ArrayDeque<Triple<AccessibilityNodeInfo, Int, String>>()
+        queue.add(Triple(root, 0, ""))
         while (queue.isNotEmpty() && visited < MAX_TRAVERSAL_NODES) {
-            val (node, depth) = queue.removeFirst()
+            val (node, depth, parentId) = queue.removeFirst()
             visited++
 
             val id = node.viewIdResourceName.orEmpty().lowercase()
+            val normalizedId = id.substringAfterLast('/')
             val description = node.contentDescription?.toString().orEmpty().lowercase()
             val text = node.text?.toString().orEmpty().lowercase()
+
+            if (parentId == "content" && normalizedId.isNotBlank()) {
+                contentChildViewIds += normalizedId
+            }
 
             if (
                 id.contains("row_thread_composer") ||
@@ -469,7 +465,7 @@ class ReelGuardAccessibilityService : AccessibilityService() {
             if (depth < MAX_TRAVERSAL_DEPTH) {
                 for (index in 0 until node.childCount) {
                     val child = node.getChild(index) ?: continue
-                    queue.add(child to depth + 1)
+                    queue.add(Triple(child, depth + 1, normalizedId))
                 }
             }
 
@@ -477,8 +473,35 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         }
 
         while (queue.isNotEmpty()) {
-            val (remaining, _) = queue.removeFirst()
+            val (remaining, _, _) = queue.removeFirst()
             if (remaining !== root) safeRecycle(remaining)
+        }
+
+        val dmOriginReel = InstagramNavigationClassifier.isDmOriginReel(
+            contentChildViewIds = contentChildViewIds,
+            isReelsViewer = inReelsViewer
+        )
+        if (dmOriginReel) inDmThread = true
+
+        // Debug builds emit only route IDs/booleans (never message text, usernames or media data),
+        // making it possible to validate this classifier against a real Instagram update.
+        if (inReelsViewer) {
+            val route = when {
+                dmOriginReel -> "DM_SHARED_REEL"
+                reelsTabSelected -> "REELS_TAB"
+                else -> "NON_DM_VIEWER"
+            }
+            val isDebuggable =
+                (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            if (isDebuggable && route != lastLoggedViewerRoute) {
+                Log.d(
+                    "ReelGuardNavigation",
+                    "viewerOrigin=$route; contentChildIds=$contentChildViewIds; reelsTabSelected=$reelsTabSelected"
+                )
+            }
+            lastLoggedViewerRoute = route
+        } else {
+            lastLoggedViewerRoute = null
         }
 
         return ScreenSignals(
@@ -486,7 +509,8 @@ class ReelGuardAccessibilityService : AccessibilityService() {
             isInReelsViewer = inReelsViewer,
             isReelsTabSelected = reelsTabSelected,
             isExploreOrStoryReel = exploreOrStoryReel,
-            isHomeSuggestedFullScreenReel = homeSuggestedFullScreenReel
+            isHomeSuggestedFullScreenReel = homeSuggestedFullScreenReel,
+            isDmOriginReel = dmOriginReel
         )
     }
 
