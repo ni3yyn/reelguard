@@ -364,7 +364,7 @@ class ReelGuardAccessibilityService : AccessibilityService() {
 
         val source = runCatching { event.source }.getOrNull()
         if (source != null) {
-            val matched = subtreeMatches(source, maxDepth = 5, maxNodes = 36) { node ->
+            val isSharedReelNode: (AccessibilityNodeInfo) -> Boolean = { node ->
                 val id = node.viewIdResourceName.orEmpty().lowercase()
                 val description = node.contentDescription?.toString().orEmpty().lowercase()
                 val text = node.text?.toString().orEmpty().lowercase()
@@ -376,6 +376,11 @@ class ReelGuardAccessibilityService : AccessibilityService() {
                     description.contains("shared video") ||
                     text.contains("watch reel")
             }
+
+            // Instagram often reports the deepest image/text child as the click source.
+            // The Reel/share identity can live on its clickable message-bubble ancestor.
+            val matched = ancestorMatches(source, maxDepth = 7, predicate = isSharedReelNode) ||
+                subtreeMatches(source, maxDepth = 6, maxNodes = 64, predicate = isSharedReelNode)
             safeRecycle(source)
             if (matched) return true
         }
@@ -383,6 +388,31 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         val eventText = event.text.joinToString(" ").lowercase()
         val eventDescription = event.contentDescription?.toString().orEmpty().lowercase()
         return eventDescription.contains("reel") || eventText.contains("reel")
+    }
+
+    private fun ancestorMatches(
+        source: AccessibilityNodeInfo,
+        maxDepth: Int,
+        predicate: (AccessibilityNodeInfo) -> Boolean
+    ): Boolean {
+        var current: AccessibilityNodeInfo? = runCatching {
+            AccessibilityNodeInfo.obtain(source)
+        }.getOrNull() ?: return false
+
+        for (depth in 0..maxDepth) {
+            val node = current ?: return false
+            val matched = predicate(node)
+            val parent = if (!matched && depth < maxDepth) {
+                runCatching { node.parent }.getOrNull()
+            } else {
+                null
+            }
+            safeRecycle(node)
+            if (matched) return true
+            current = parent
+        }
+        current?.let(::safeRecycle)
+        return false
     }
 
     private fun inspectScreenSignals(root: AccessibilityNodeInfo, eventClass: String): ScreenSignals {
