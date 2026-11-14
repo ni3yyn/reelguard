@@ -28,6 +28,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +40,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -424,27 +427,35 @@ private fun NeumorphicMark(
     size: Dp,
     iconSize: Dp
 ) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .shadow(
-                elevation = 11.dp,
-                shape = RoundedCornerShape(size * 0.32f),
-                ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.66f),
-                spotColor = ReelGuardColors.Shadow.copy(alpha = 0.76f)
-            )
-            .background(
-                Brush.verticalGradient(listOf(ReelGuardColors.SurfaceRaised, ReelGuardColors.SurfacePressed)),
-                RoundedCornerShape(size * 0.32f)
-            )
-            .border(
-                1.dp,
-                Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border)),
-                RoundedCornerShape(size * 0.32f)
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(Icons.Outlined.Shield, contentDescription = null, tint = ReelGuardColors.Accent, modifier = Modifier.size(iconSize))
+    val shape = RoundedCornerShape(size * 0.32f)
+    Box(modifier = modifier.size(size)) {
+        Box(
+            Modifier.matchParentSize()
+                .offset(x = 4.dp, y = 5.dp)
+                .shadow(11.dp, shape, ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.78f), spotColor = ReelGuardColors.Shadow)
+        )
+        Box(
+            Modifier.matchParentSize()
+                .offset(x = (-4).dp, y = (-4).dp)
+                .shadow(9.dp, shape, ambientColor = Color.White.copy(alpha = 0.96f), spotColor = Color.White)
+        )
+        Box(
+            modifier = Modifier.matchParentSize()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFFF9FBFD), ReelGuardColors.SurfaceRaised, Color(0xFFDDE4EC))
+                    ),
+                    shape
+                )
+                .border(
+                    1.dp,
+                    Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border, Color.White.copy(alpha = 0.65f))),
+                    shape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Outlined.Shield, contentDescription = null, tint = ReelGuardColors.AccentDark, modifier = Modifier.size(iconSize))
+        }
     }
 }
 
@@ -1106,27 +1117,29 @@ private fun NeumorphicIconWell(
     tint: Color,
     size: Dp
 ) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .shadow(
-                elevation = 6.dp,
-                shape = RoundedCornerShape(size * 0.32f),
-                ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.68f),
-                spotColor = ReelGuardColors.Shadow.copy(alpha = 0.72f)
-            )
-            .background(
-                Brush.verticalGradient(listOf(ReelGuardColors.SurfaceRaised, ReelGuardColors.SurfacePressed)),
-                RoundedCornerShape(size * 0.32f)
-            )
-            .border(
-                1.dp,
-                Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border)),
-                RoundedCornerShape(size * 0.32f)
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size * 0.48f))
+    val shape = RoundedCornerShape(size * 0.32f)
+    Box(modifier = Modifier.size(size)) {
+        Box(
+            Modifier.matchParentSize()
+                .offset(x = 3.dp, y = 4.dp)
+                .shadow(6.dp, shape, ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.78f), spotColor = ReelGuardColors.Shadow)
+        )
+        Box(
+            Modifier.matchParentSize()
+                .offset(x = (-3).dp, y = (-3).dp)
+                .shadow(5.dp, shape, ambientColor = Color.White.copy(alpha = 0.95f), spotColor = Color.White)
+        )
+        Box(
+            modifier = Modifier.matchParentSize()
+                .background(
+                    Brush.linearGradient(listOf(Color(0xFFF8FAFC), ReelGuardColors.SurfaceRaised, Color(0xFFDDE4EC))),
+                    shape
+                )
+                .border(1.dp, Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border)), shape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size * 0.48f))
+        }
     }
 }
 
@@ -1138,19 +1151,35 @@ private fun NeumorphicPrimaryButton(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(17.dp)
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.975f else 1f,
+        animationSpec = tween(130, easing = FastOutSlowInEasing),
+        label = "primary-button-press"
+    )
+    val depth by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (pressed) 1.dp else 12.dp,
+        animationSpec = tween(130),
+        label = "primary-button-depth"
+    )
     Row(
         modifier = modifier
-            .height(54.dp)
+            .height(56.dp)
+            .scale(pressScale)
             .shadow(
-                elevation = 9.dp,
+                elevation = depth,
                 shape = shape,
-                ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.55f),
-                spotColor = ReelGuardColors.AccentDark.copy(alpha = 0.32f)
+                ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.64f),
+                spotColor = ReelGuardColors.AccentDark.copy(alpha = 0.4f)
             )
-            .background(Brush.verticalGradient(listOf(Color(0xFF718092), ReelGuardColors.AccentDark)), shape)
-            .border(1.dp, Color.White.copy(alpha = 0.32f), shape)
+            .background(
+                Brush.verticalGradient(listOf(Color(0xFF71869B), Color(0xFF43596E), ReelGuardColors.AccentDark)),
+                shape
+            )
+            .border(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.72f), Color.White.copy(alpha = 0.08f))), shape)
             .clip(shape)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(horizontal = 18.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
@@ -1213,20 +1242,36 @@ private fun NavigationItem(
     icon: ImageVector,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (selected) 1.035f else 1f,
-        animationSpec = tween(230, easing = FastOutSlowInEasing),
+        targetValue = when {
+            pressed -> 0.965f
+            selected -> 1.025f
+            else -> 1f
+        },
+        animationSpec = tween(180, easing = FastOutSlowInEasing),
         label = "navigation-scale"
     )
+    val shape = RoundedCornerShape(17.dp)
     Column(
         modifier = modifier
             .scale(scale)
-            .clip(RoundedCornerShape(17.dp))
+            .clip(shape)
             .background(
-                if (selected) ReelGuardColors.SurfacePressed.copy(alpha = 0.75f) else Color.Transparent,
-                RoundedCornerShape(17.dp)
+                if (selected) {
+                    Brush.verticalGradient(listOf(Color(0xFFD6DEE7), ReelGuardColors.SurfacePressed, Color(0xFFDCE3EB)))
+                } else {
+                    Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                },
+                shape
             )
-            .clickable(onClick = onClick)
+            .border(
+                if (selected) 1.dp else 0.dp,
+                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.9f), ReelGuardColors.Border.copy(alpha = 0.55f))),
+                shape
+            )
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1252,22 +1297,40 @@ private fun NeumorphicSwitch(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
+    val thumbOffset by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (checked) 22.dp else 0.dp,
+        animationSpec = tween(220, easing = FastOutSlowInEasing),
+        label = "switch-thumb-position"
+    )
+    val trackShape = CircleShape
     Box(
         modifier = Modifier
             .size(width = 55.dp, height = 32.dp)
-            .shadow(5.dp, CircleShape, ambientColor = ReelGuardColors.Shadow, spotColor = ReelGuardColors.Shadow)
-            .background(if (checked) ReelGuardColors.EmeraldSurface else ReelGuardColors.SurfacePressed, CircleShape)
-            .border(1.dp, Color.White, CircleShape)
-            .clip(CircleShape)
+            .shadow(6.dp, trackShape, ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.72f), spotColor = ReelGuardColors.Shadow)
+            .background(
+                Brush.verticalGradient(
+                    if (checked) listOf(Color(0xFFD5E9E0), ReelGuardColors.EmeraldSurface, Color(0xFFD0E3DA))
+                    else listOf(Color(0xFFDDE3EB), ReelGuardColors.SurfacePressed, Color(0xFFE8ECF1))
+                ),
+                trackShape
+            )
+            .border(1.dp, Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border)), trackShape)
+            .clip(trackShape)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(3.dp),
-        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+            .padding(3.dp)
     ) {
         Box(
             Modifier
+                .offset(x = thumbOffset)
                 .size(24.dp)
-                .shadow(4.dp, CircleShape, ambientColor = ReelGuardColors.Shadow, spotColor = ReelGuardColors.Shadow)
-                .background(if (checked) ReelGuardColors.Emerald else ReelGuardColors.SurfaceRaised, CircleShape)
+                .shadow(5.dp, CircleShape, ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.8f), spotColor = ReelGuardColors.Shadow)
+                .background(
+                    Brush.verticalGradient(
+                        if (checked) listOf(Color(0xFF4C9A7C), ReelGuardColors.Emerald)
+                        else listOf(Color(0xFFFCFDFE), ReelGuardColors.SurfaceRaised)
+                    ),
+                    CircleShape
+                )
                 .border(1.dp, Color.White, CircleShape)
         )
     }
