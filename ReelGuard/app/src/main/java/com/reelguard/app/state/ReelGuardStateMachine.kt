@@ -6,6 +6,7 @@ enum class GuardPhase {
     DM_SINGLE_REEL,
     ALGORITHMIC_BLOCKED,
     TIME_LIMIT_SELECTION,
+    EXITING_TO_HOME,
     TIMED_UNLOCKED
 }
 
@@ -101,6 +102,17 @@ class ReelGuardStateMachine(
 
     fun onScreenEvaluated(signals: ScreenSignals, nowMs: Long): List<GuardEffect> {
         val effects = mutableListOf<GuardEffect>()
+
+        // Keep the intervention dismissed while the explicit Home navigation is in flight.
+        // Instagram can emit several more Reel events before its navigation finishes.
+        if (snapshot.phase == GuardPhase.EXITING_TO_HOME) {
+            if (!signals.isReelsSurface) {
+                snapshot = GuardSnapshot()
+                effects += GuardEffect.DismissOverlay
+            }
+            return effects
+        }
+
         val wasBlocking = snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED ||
             snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
         val timerActive = snapshot.phase == GuardPhase.TIMED_UNLOCKED &&
@@ -200,7 +212,7 @@ class ReelGuardStateMachine(
     }
 
     fun onCancelTapped(): List<GuardEffect> {
-        snapshot = GuardSnapshot()
+        snapshot = GuardSnapshot(phase = GuardPhase.EXITING_TO_HOME)
         return listOf(GuardEffect.DismissOverlay, GuardEffect.ExitReelsToHome)
     }
 
@@ -219,7 +231,7 @@ class ReelGuardStateMachine(
     }
 
     fun onTimerExpired(): List<GuardEffect> {
-        snapshot = GuardSnapshot()
+        snapshot = GuardSnapshot(phase = GuardPhase.EXITING_TO_HOME)
         return listOf(GuardEffect.ShowTimesUpBanner, GuardEffect.ExitReelsToHome)
     }
 }
