@@ -110,6 +110,21 @@ class ReelGuardStateMachine(
             snapshot = GuardSnapshot()
         }
 
+        // Preserve the DM click window while the clicked card is still in the thread.
+        // Instagram often emits the click event before mounting the Reel player.
+        if (
+            signals.isInDmThread &&
+            !signals.isInReelsViewer &&
+            snapshot.phase != GuardPhase.ALGORITHMIC_BLOCKED &&
+            snapshot.phase != GuardPhase.TIME_LIMIT_SELECTION
+        ) {
+            snapshot = snapshot.copy(
+                phase = GuardPhase.DM_THREAD,
+                dmReelMountedAtMs = 0L
+            )
+            return effects
+        }
+
         if (!signals.isReelsSurface) {
             when (snapshot.phase) {
                 GuardPhase.ALGORITHMIC_BLOCKED, GuardPhase.TIME_LIMIT_SELECTION -> {
