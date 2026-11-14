@@ -10,14 +10,15 @@ Mindful Instagram Reels blocker built with `AccessibilityService` and `SYSTEM_AL
 
 ## Building & Installing
 
-1. Open the `android/` directory in **Android Studio** (Ladybug or newer, JDK 17).
-2. Connect your phone via USB Debugging or build a release/debug APK (`./gradlew assembleDebug`).
-3. **Samsung Galaxy S21 (One UI / Android 13–14+) Sideload Setup**:
+1. Open this directory in **Android Studio** (Ladybug or newer, JDK 17).
+2. Connect your phone via USB Debugging or build a debug APK with `./gradlew assembleDebug`.
+3. GitHub Actions builds and tests the debug APK on pushes and pull requests to `main`. Download it from the `reelguard-debug-apk` artifact on the workflow run.
+4. **Samsung Galaxy S21 (One UI / Android 13–14+) Sideload Setup**:
    - After installing the APK, open **Settings > Apps > ReelGuard**.
    - Tap the **⋮** (three dots) in the top-right corner and select **Allow restricted settings**.
    - Return to **ReelGuard** and enable **1. Accessibility Service** and **2. Display Over Other Apps**.
    - Open **Settings > Apps > ReelGuard > Battery** and set it to **Unrestricted** so One UI does not kill the service in the background.
-4. **Refining Instagram Selectors (Debug Inspector Mode)**:
+5. **Refining Instagram Selectors (Debug Inspector Mode)**:
    - Enable **Debug Inspector Mode** inside ReelGuard's `MainActivity` to temporarily suspend blocking overlays and show a draggable **`Snap UI`** floating pill in the top-right corner of Instagram.
    - Navigate freely across DM Reels, Home Feed Reels, Explore Reels, and Stories, tapping **Snap UI** to capture the indented `AccessibilityNodeInfo` hierarchy into `DebugLogRepository`.
    - Return to ReelGuard's **View Captured Logs** section and tap **Copy Logs to Clipboard** to export the last 100 entries.
