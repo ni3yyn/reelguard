@@ -1,24 +1,42 @@
-# ReelGuard (Native Android — Kotlin + Jetpack Compose)
+# ReelGuard
 
-Mindful Instagram Reels blocker built with `AccessibilityService` and `SYSTEM_ALERT_WINDOW`.
+ReelGuard is a native Android mindful-use companion for Instagram Reels.
 
-## State Machine Overview
+## What the user experience should be
 
-- **State A (DM-Shared Single Reel)**: Clicking a shared Reel inside an Instagram DM thread (`DirectThreadFragment` / `row_thread_composer`) opens the single Reel player with zero interstitial. Any vertical swipe (`TYPE_VIEW_SCROLLED`) inside DM Reel playback immediately executes `performGlobalAction(GLOBAL_ACTION_BACK)` to return to the DM chat and reset state.
-- **State B (Algorithmic / Non-DM Reels)**: Entering the Reels tab, Explore/Search Reel, Story Reel, or full-screen Home suggested Reel without an active timer raises a full-screen non-dismissible `TYPE_APPLICATION_OVERLAY` ("Are you sure?"). Tapping **Cancel** dismisses the overlay and returns to Home.
-- **State C (Conscious Time Limit)**: Tapping **Continue anyway** shows the 1–10 min limit grid. Selecting a duration starts a strict `CountDownTimer` (`MM:SS`). On `00:00`, Reel access locks immediately, displays "Time's up", and forcibly exits back to Instagram Home.
+1. Open ReelGuard and review the Accessibility disclosure.
+2. Enable ReelGuard under Android Settings → Accessibility.
+3. Allow Display over other apps.
+4. Return to ReelGuard and tap **Activate protection**.
+5. Open Instagram and use it normally. There is no in-Instagram accessibility button and no floating debug control.
 
-## Building & Installing
+When the user opens a Reel shared in a direct message, ReelGuard is intended to allow that single Reel. A meaningful vertical swipe to the next Reel returns to the conversation.
 
-1. Open this directory in **Android Studio** (Ladybug or newer, JDK 17).
-2. Connect your phone via USB Debugging or build a debug APK with `./gradlew assembleDebug`.
-3. GitHub Actions builds and tests the debug APK on pushes and pull requests to `main`. Download it from the `reelguard-debug-apk` artifact on the workflow run.
-4. **Samsung Galaxy S21 (One UI / Android 13–14+) Sideload Setup**:
-   - After installing the APK, open **Settings > Apps > ReelGuard**.
-   - Tap the **⋮** (three dots) in the top-right corner and select **Allow restricted settings**.
-   - Return to **ReelGuard** and enable **1. Accessibility Service** and **2. Display Over Other Apps**.
-   - Open **Settings > Apps > ReelGuard > Battery** and set it to **Unrestricted** so One UI does not kill the service in the background.
-5. **Refining Instagram Selectors (Debug Inspector Mode)**:
-   - Enable **Debug Inspector Mode** inside ReelGuard's `MainActivity` to temporarily suspend blocking overlays and show a draggable **`Snap UI`** floating pill in the top-right corner of Instagram.
-   - Navigate freely across DM Reels, Home Feed Reels, Explore Reels, and Stories, tapping **Snap UI** to capture the indented `AccessibilityNodeInfo` hierarchy into `DebugLogRepository`.
-   - Return to ReelGuard's **View Captured Logs** section and tap **Copy Logs to Clipboard** to export the last 100 entries.
+When the user opens a Reels, Explore, or suggested-Reel surface, ReelGuard shows a full-screen pause. The user can leave Reels or choose a 5, 10, 15, or 20 minute session. The timer continues while Instagram is in the background; it never sends a Back action to another app. When the timer ends, ReelGuard only navigates if Instagram is foreground and the current screen is still a Reel surface.
+
+## Important limitations
+
+- Instagram's accessibility hierarchy is not a stable public API. Selectors can change between Instagram releases, locales, devices, and experiments. Real-device regression testing is required after Instagram updates.
+- ReelGuard currently targets personal/sideload testing. Google Play distribution requires a separate policy assessment. In particular, Google Play restricts non-accessibility apps that use AccessibilityService for autonomous actions, and an in-app disclosure alone does not make a prohibited use eligible.
+- Accessibility and overlay permissions are user-controlled. ReelGuard must never prevent the user from disabling the service or uninstalling the app.
+- This repository does not currently include a signed production release configuration.
+
+## Development
+
+Open this directory in Android Studio with JDK 17. Use:
+
+\`\`\`bash
+./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease
+\`\`\`
+
+The GitHub Actions workflow runs those checks and uploads a debug APK plus an unsigned release APK for inspection.
+
+## Supported app behavior
+
+- Setup guidance and permission status refresh when the app returns to the foreground.
+- Explicit protection activation and pause.
+- A separate, affirmative Accessibility disclosure before opening Android settings.
+- Local-only accessibility hierarchy inspection for the core detection flow.
+- A full-screen, contextual intervention; no floating Snap UI chip.
+- Timer restoration after service/process restart.
+- Overlay dismissal and state cleanup when Instagram is backgrounded.
