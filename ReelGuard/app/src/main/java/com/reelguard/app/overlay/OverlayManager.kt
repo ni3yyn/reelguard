@@ -41,7 +41,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -210,15 +212,26 @@ private fun BlockingOverlayContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xF5080B10))
+            .background(Color(0xD9E5E8ED))
             .padding(horizontal = 22.dp, vertical = 28.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 440.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = ReelGuardColors.Surface,
-            border = BorderStroke(1.dp, ReelGuardColors.Border)
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 440.dp)
+                .shadow(
+                    elevation = 20.dp,
+                    shape = RoundedCornerShape(27.dp),
+                    ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.75f),
+                    spotColor = ReelGuardColors.Shadow
+                ),
+            shape = RoundedCornerShape(27.dp),
+            color = ReelGuardColors.SurfaceRaised,
+            border = BorderStroke(
+                1.dp,
+                Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border))
+            )
         ) {
             when (step) {
                 OverlayStep.CONFIRMATION -> ConfirmationStep(
@@ -247,7 +260,9 @@ private fun ConfirmationStep(
         Surface(
             modifier = Modifier.size(58.dp),
             shape = RoundedCornerShape(16.dp),
-            color = ReelGuardColors.AccentMuted
+            color = ReelGuardColors.SurfacePressed,
+            shadowElevation = 7.dp,
+            border = BorderStroke(1.dp, Color.White)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -278,9 +293,13 @@ private fun ConfirmationStep(
         Button(
             onClick = onContinueAnyway,
             modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(11.dp),
+            shape = RoundedCornerShape(14.dp),
+            elevation = ButtonDefaults.buttonElevation(
+                defaultElevation = 8.dp,
+                pressedElevation = 2.dp
+            ),
             colors = ButtonDefaults.buttonColors(
-                containerColor = ReelGuardColors.Accent,
+                containerColor = ReelGuardColors.AccentDark,
                 contentColor = Color.White
             )
         ) {
@@ -293,9 +312,12 @@ private fun ConfirmationStep(
         OutlinedButton(
             onClick = onCancel,
             modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(11.dp),
-            border = BorderStroke(1.dp, ReelGuardColors.Border),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = ReelGuardColors.TextPrimary)
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color.White),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = ReelGuardColors.SurfacePressed,
+                contentColor = ReelGuardColors.TextPrimary
+            )
         ) {
             Icon(Icons.Outlined.ArrowBack, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(modifier = Modifier.width(7.dp))
@@ -361,10 +383,11 @@ private fun TimeLimitStep(
                         Surface(
                             modifier = Modifier.weight(1f).height(58.dp).clickable { selectedMinutes = minutes },
                             shape = RoundedCornerShape(11.dp),
-                            color = if (selected) ReelGuardColors.AccentMuted else ReelGuardColors.SurfaceElevated,
+                            color = if (selected) ReelGuardColors.AccentMuted else ReelGuardColors.SurfaceRaised,
+                            shadowElevation = if (selected) 2.dp else 6.dp,
                             border = BorderStroke(
                                 1.dp,
-                                if (selected) ReelGuardColors.Accent else ReelGuardColors.Border
+                                if (selected) ReelGuardColors.Accent else Color.White
                             )
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -386,8 +409,12 @@ private fun TimeLimitStep(
             onClick = { onSelectMinutes(selectedMinutes) },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(11.dp),
+            elevation = ButtonDefaults.buttonElevation(
+                defaultElevation = 8.dp,
+                pressedElevation = 2.dp
+            ),
             colors = ButtonDefaults.buttonColors(
-                containerColor = ReelGuardColors.Accent,
+                containerColor = ReelGuardColors.AccentDark,
                 contentColor = Color.White
             )
         ) {
@@ -397,9 +424,12 @@ private fun TimeLimitStep(
         OutlinedButton(
             onClick = onCancel,
             modifier = Modifier.fillMaxWidth().height(46.dp),
-            shape = RoundedCornerShape(11.dp),
-            border = BorderStroke(1.dp, ReelGuardColors.Border),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = ReelGuardColors.TextSecondary)
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color.White),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = ReelGuardColors.SurfacePressed,
+                contentColor = ReelGuardColors.TextSecondary
+            )
         ) {
             Text("Go back", fontWeight = FontWeight.Medium)
         }

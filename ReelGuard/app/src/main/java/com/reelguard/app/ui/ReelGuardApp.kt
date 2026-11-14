@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -138,6 +139,8 @@ private fun ReelGuardSplash() {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(
                 Brush.verticalGradient(
                     listOf(Color(0xFFEEF0F4), ReelGuardColors.Background, Color(0xFFDDE2E8))
@@ -286,7 +289,7 @@ private fun ReelGuardNavigation() {
         modifier = Modifier
             .fillMaxSize()
             .background(ReelGuardColors.Background)
-            .navigationBarsPadding()
+            .statusBarsPadding()
     ) {
         AppHeader(
             isProtected = protected,
@@ -802,7 +805,7 @@ private fun SettingsScreen(
                 description = "Mindful protection for Instagram Reels.",
                 status = "v1.1.0",
                 isComplete = true,
-                onClick = {}
+                onClick = null
             )
             SettingsRow(
                 icon = Icons.Outlined.Info,
@@ -1064,7 +1067,7 @@ private fun SettingsRow(
     description: String,
     status: String,
     isComplete: Boolean,
-    onClick: () -> Unit
+    onClick: (() -> Unit)?
 ) {
     NeumorphicPanel(
         padding = androidx.compose.foundation.layout.PaddingValues(14.dp),
@@ -1072,7 +1075,7 @@ private fun SettingsRow(
         elevation = 7.dp
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+            modifier = Modifier.fillMaxWidth().clickable(enabled = onClick != null) { onClick?.invoke() },
             horizontalArrangement = Arrangement.spacedBy(11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1088,7 +1091,9 @@ private fun SettingsRow(
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp
                 )
-                Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = ReelGuardColors.TextMuted, modifier = Modifier.size(17.dp))
+                if (onClick != null) {
+                    Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = ReelGuardColors.TextMuted, modifier = Modifier.size(17.dp))
+                }
             }
         }
     }
