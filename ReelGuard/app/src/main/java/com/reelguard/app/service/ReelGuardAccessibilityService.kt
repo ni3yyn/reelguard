@@ -239,29 +239,78 @@ class ReelGuardAccessibilityService : AccessibilityService() {
     }
 
     private fun exitReelsBackToHome() {
-        mainHandler.post {
-            val root = runCatching { rootInActiveWindow }.getOrNull() ?: return@post
-            if (root.packageName?.toString() != INSTAGRAM_PACKAGE) return@post
+        // Remove the full-screen overlay first. Querying rootInActiveWindow immediately can
+        // still return ReelGuard's own overlay window instead of Instagram underneath it.
+        overlayManager?.dismiss()
+        attemptExitReelsBackToHome(attempt = 0)
+    }
+
+    private fun attemptExitReelsBackToHome(attempt: Int) {
+        mainHandler.postDelayed({
+            if (!instagramForeground) return@postDelayed
+
+            val root = findInstagramRoot()
+            if (root == null) {
+                // The last confirmed Instagram surface is still a Reel. A guarded global Back
+                // is safer than leaving the user trapped behind a dismissed overlay.
+                if (lastScreenSignals.isReelsSurface) performGlobalAction(GLOBAL_ACTION_BACK)
+                if (attempt < 2) attemptExitReelsBackToHome(attempt + 1)
+                return@postDelayed
+            }
 
             val signals = inspectScreenSignals(root, "")
-            if (!signals.isReelsSurface) return@post
+            lastScreenSignals = signals
+            if (!signals.isReelsSurface) {
+                stateMachine.onScreenEvaluated(signals, SystemClock.elapsedRealtime())
+                    .forEach { executeEffect(it) }
+                safeRecycle(root)
+                return@postDelayed
+            }
 
             val homeNode = findFirstMatchingNode(root) { node ->
                 val id = node.viewIdResourceName.orEmpty().lowercase()
                 val description = node.contentDescription?.toString().orEmpty().lowercase()
-                val isHomeId = id.endsWith(":id/feed_tab") || id.contains("home_tab")
-                val isHomeDescription = description == "home" || description.startsWith("home,")
+                val isHomeId = id.endsWith(":id/feed_tab") ||
+                    id.contains("home_tab") ||
+                    id.contains("feed_tab")
+                val isHomeDescription = description == "home" ||
+                    description.startsWith("home,") ||
+                    description.startsWith("home ")
                 node.isClickable && (isHomeId || isHomeDescription)
             }
 
-            if (homeNode != null) {
-                homeNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                safeRecycle(homeNode)
-            } else {
-                // Never send a global Back action unless Instagram is foreground and still on a Reel surface.
+            val homeSelected = homeNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+            homeNode?.let(::safeRecycle)
+            safeRecycle(root)
+
+            // Retry once the UI has had time to react. If Instagram does not expose a usable
+            // Home tab, fall back to Android's Back action while Instagram is still verified
+            // as foreground and still displaying a Reel.
+            if (!homeSelected || attempt == 2) {
                 performGlobalAction(GLOBAL_ACTION_BACK)
             }
-        }
+            if (attempt < 2) attemptExitReelsBackToHome(attempt + 1)
+        }, if (attempt == 0) 220L else 420L)
+    }
+
+    private fun findInstagramRoot(): AccessibilityNodeInfo? {
+        val windowRoot = runCatching {
+            windows.firstNotNullOfOrNull { window ->
+                val candidate = window.root ?: return@firstNotNullOfOrNull null
+                if (candidate.packageName?.toString() == INSTAGRAM_PACKAGE) {
+                    candidate
+                } else {
+                    safeRecycle(candidate)
+                    null
+                }
+            }
+        }.getOrNull()
+        if (windowRoot != null) return windowRoot
+
+        val activeRoot = runCatching { rootInActiveWindow }.getOrNull() ?: return null
+        if (activeRoot.packageName?.toString() == INSTAGRAM_PACKAGE) return activeRoot
+        safeRecycle(activeRoot)
+        return null
     }
 
     private fun isClickOnDmSharedReel(event: AccessibilityEvent): Boolean {
