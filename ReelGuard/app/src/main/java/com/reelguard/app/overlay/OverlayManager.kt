@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -210,7 +211,15 @@ private fun BlockingOverlayContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xD9E5E8ED))
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xDDF5F7FA),
+                        Color(0xE2DCE3EB),
+                        Color(0xE9C5CED9)
+                    )
+                )
+            )
             .padding(horizontal = 22.dp, vertical = 28.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -309,6 +318,38 @@ private fun TactileButton(
 }
 
 @Composable
+private fun OverlayIconWell(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    size: androidx.compose.ui.unit.Dp,
+    tint: Color
+) {
+    val shape = RoundedCornerShape(size * 0.32f)
+    Box(modifier = Modifier.size(size)) {
+        Box(
+            Modifier.matchParentSize()
+                .offset(x = 4.dp, y = 5.dp)
+                .shadow(8.dp, shape, ambientColor = ReelGuardColors.Shadow.copy(alpha = 0.82f), spotColor = ReelGuardColors.Shadow)
+        )
+        Box(
+            Modifier.matchParentSize()
+                .offset(x = (-4).dp, y = (-4).dp)
+                .shadow(7.dp, shape, ambientColor = Color.White.copy(alpha = 0.98f), spotColor = Color.White)
+        )
+        Box(
+            Modifier.matchParentSize()
+                .background(
+                    Brush.linearGradient(listOf(Color(0xFFFAFBFD), ReelGuardColors.SurfaceRaised, Color(0xFFDDE4EC))),
+                    shape
+                )
+                .border(1.dp, Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border)), shape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size * 0.48f))
+        }
+    }
+}
+
+@Composable
 private fun DurationChoice(
     modifier: Modifier,
     minutes: Int,
@@ -375,22 +416,11 @@ private fun ConfirmationStep(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        Surface(
-            modifier = Modifier.size(58.dp),
-            shape = RoundedCornerShape(16.dp),
-            color = ReelGuardColors.SurfacePressed,
-            shadowElevation = 7.dp,
-            border = BorderStroke(1.dp, Color.White)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Outlined.Shield,
-                    contentDescription = null,
-                    tint = ReelGuardColors.Accent,
-                    modifier = Modifier.size(30.dp)
-                )
-            }
-        }
+        OverlayIconWell(
+            icon = Icons.Outlined.Shield,
+            size = 60.dp,
+            tint = ReelGuardColors.AccentDark
+        )
 
         Spacer(modifier = Modifier.height(19.dp))
         Text(
@@ -445,20 +475,11 @@ private fun TimeLimitStep(
         modifier = Modifier.padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Surface(
-            modifier = Modifier.size(54.dp),
-            shape = RoundedCornerShape(15.dp),
-            color = ReelGuardColors.AccentMuted
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Outlined.HourglassTop,
-                    contentDescription = null,
-                    tint = ReelGuardColors.Accent,
-                    modifier = Modifier.size(27.dp)
-                )
-            }
-        }
+        OverlayIconWell(
+            icon = Icons.Outlined.HourglassTop,
+            size = 56.dp,
+            tint = ReelGuardColors.Accent
+        )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "How long do you want?",
