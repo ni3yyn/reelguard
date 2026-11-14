@@ -128,7 +128,8 @@ class ReelGuardStateMachine(
             signals.isInDmThread &&
             !signals.isInReelsViewer &&
             snapshot.phase != GuardPhase.ALGORITHMIC_BLOCKED &&
-            snapshot.phase != GuardPhase.TIME_LIMIT_SELECTION
+            snapshot.phase != GuardPhase.TIME_LIMIT_SELECTION &&
+            snapshot.phase != GuardPhase.DM_SINGLE_REEL
         ) {
             snapshot = snapshot.copy(
                 phase = GuardPhase.DM_THREAD,
@@ -155,12 +156,15 @@ class ReelGuardStateMachine(
             snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
         ) return effects
 
-        if (snapshot.phase == GuardPhase.DM_SINGLE_REEL && signals.isInReelsViewer) {
+        // The Reels tab can remain marked selected even when a Reel was opened from a DM.
+        // A verified tap on a Reel inside a DM is the stronger signal: honor it for the
+        // entire entry transition instead of letting Instagram's selected tab override it.
+        if (snapshot.phase == GuardPhase.DM_SINGLE_REEL && signals.isReelsSurface) {
             return effects
         }
 
         val hasPendingDmClick = nowMs <= snapshot.pendingDmReelClickUntilMs
-        if (signals.isInReelsViewer && hasPendingDmClick && !signals.isReelsTabSelected) {
+        if (signals.isReelsSurface && hasPendingDmClick) {
             snapshot = snapshot.copy(
                 phase = GuardPhase.DM_SINGLE_REEL,
                 pendingDmReelClickUntilMs = 0L,
