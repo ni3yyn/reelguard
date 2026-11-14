@@ -59,6 +59,8 @@ class ReelGuardStateMachineTest {
             machine.onCancelTapped()
         )
         assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
+        assertTrue(machine.onAppBackgrounded().isEmpty())
+        assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
         assertTrue(
             machine.onScreenEvaluated(
                 ScreenSignals(isInReelsViewer = true, isReelsTabSelected = true),
@@ -92,6 +94,8 @@ class ReelGuardStateMachineTest {
             listOf(GuardEffect.ShowTimesUpBanner, GuardEffect.ExitReelsToHome),
             machine.onTimerExpired()
         )
+        assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
+        assertTrue(machine.onAppBackgrounded().isEmpty())
         assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
         assertTrue(
             machine.onScreenEvaluated(ScreenSignals(isInReelsViewer = true), 60_001L).isEmpty()
