@@ -1,9 +1,5 @@
 package com.reelguard.app.state
 
-/**
- * Pure, deterministic state machine governing ReelGuard's detection and enforcement logic.
- * Decoupled from Android framework types so transitions can be unit tested directly.
- */
 enum class GuardPhase {
     IDLE,
     DM_THREAD,
@@ -19,7 +15,13 @@ data class ScreenSignals(
     val isReelsTabSelected: Boolean = false,
     val isExploreOrStoryReel: Boolean = false,
     val isHomeSuggestedFullScreenReel: Boolean = false
-)
+) {
+    val isReelsSurface: Boolean
+        get() = isInReelsViewer ||
+            isReelsTabSelected ||
+            isExploreOrStoryReel ||
+            isHomeSuggestedFullScreenReel
+}
 
 sealed interface GuardEffect {
     data object None : GuardEffect
@@ -42,7 +44,8 @@ data class GuardSnapshot(
 
 class ReelGuardStateMachine(
     private val dmClickWindowMs: Long = 2_000L,
-    private val dmMountSettleMs: Long = 400L
+    private val dmMountSettleMs: Long = 400L,
+    private val nextReelScrollThresholdPx: Int = 80
 ) {
     var snapshot: GuardSnapshot = GuardSnapshot()
         private set
@@ -59,25 +62,62 @@ class ReelGuardStateMachine(
         return GuardEffect.None
     }
 
+    fun restoreTimedSession(remainingMs: Long, nowMs: Long) {
+        if (remainingMs <= 0L) {
+            snapshot = GuardSnapshot()
+            return
+        }
+        snapshot = GuardSnapshot(
+            phase = GuardPhase.TIMED_UNLOCKED,
+            timerEndsAtMs = nowMs + remainingMs,
+            selectedMinutes = ((remainingMs + 59_999L) / 60_000L).toInt().coerceAtLeast(1)
+        )
+    }
+
+    fun onAppBackgrounded(): List<GuardEffect> {
+        val hadBlockingOverlay =
+            snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED ||
+                snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
+
+        snapshot = if (snapshot.phase == GuardPhase.TIMED_UNLOCKED) {
+            snapshot.copy(
+                pendingDmReelClickUntilMs = 0L,
+                dmReelMountedAtMs = 0L
+            )
+        } else {
+            GuardSnapshot()
+        }
+
+        return if (hadBlockingOverlay) listOf(GuardEffect.DismissOverlay) else emptyList()
+    }
+
+    fun onOverlayUnavailable() {
+        snapshot = if (snapshot.phase == GuardPhase.TIMED_UNLOCKED) {
+            snapshot
+        } else {
+            GuardSnapshot()
+        }
+    }
+
     fun onScreenEvaluated(signals: ScreenSignals, nowMs: Long): List<GuardEffect> {
         val effects = mutableListOf<GuardEffect>()
-        val timerActive = snapshot.phase == GuardPhase.TIMED_UNLOCKED && nowMs < snapshot.timerEndsAtMs
+        val wasBlocking = snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED ||
+            snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
+        val timerActive = snapshot.phase == GuardPhase.TIMED_UNLOCKED &&
+            nowMs < snapshot.timerEndsAtMs
 
-        if (snapshot.phase == GuardPhase.TIMED_UNLOCKED && nowMs >= snapshot.timerEndsAtMs) {
-            snapshot = snapshot.copy(
-                phase = GuardPhase.IDLE,
-                timerEndsAtMs = 0L,
-                selectedMinutes = 0
-            )
+        if (snapshot.phase == GuardPhase.TIMED_UNLOCKED && !timerActive) {
+            snapshot = GuardSnapshot()
         }
 
-        // If user is already inside an active blocking overlay, keep it anchored unless they exited Reels.
-        if (snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED || snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION) {
-            return effects
-        }
-
-        // Handle DM Thread presence
-        if (signals.isInDmThread && !signals.isInReelsViewer) {
+        // Preserve the DM click window while the clicked card is still in the thread.
+        // Instagram often emits the click event before mounting the Reel player.
+        if (
+            signals.isInDmThread &&
+            !signals.isInReelsViewer &&
+            snapshot.phase != GuardPhase.ALGORITHMIC_BLOCKED &&
+            snapshot.phase != GuardPhase.TIME_LIMIT_SELECTION
+        ) {
             snapshot = snapshot.copy(
                 phase = GuardPhase.DM_THREAD,
                 dmReelMountedAtMs = 0L
@@ -85,30 +125,28 @@ class ReelGuardStateMachine(
             return effects
         }
 
-        val anyReelsSurface = signals.isInReelsViewer ||
-            signals.isReelsTabSelected ||
-            signals.isExploreOrStoryReel ||
-            signals.isHomeSuggestedFullScreenReel
-
-        if (!anyReelsSurface) {
-            if (snapshot.phase == GuardPhase.DM_SINGLE_REEL) {
-                snapshot = snapshot.copy(
-                    phase = GuardPhase.IDLE,
-                    dmReelMountedAtMs = 0L,
-                    pendingDmReelClickUntilMs = 0L
-                )
-            } else if (!timerActive && snapshot.phase == GuardPhase.DM_THREAD) {
-                snapshot = snapshot.copy(phase = GuardPhase.IDLE)
+        if (!signals.isReelsSurface) {
+            when (snapshot.phase) {
+                GuardPhase.ALGORITHMIC_BLOCKED, GuardPhase.TIME_LIMIT_SELECTION -> {
+                    snapshot = GuardSnapshot()
+                    effects += GuardEffect.DismissOverlay
+                }
+                GuardPhase.DM_SINGLE_REEL -> snapshot = GuardSnapshot()
+                GuardPhase.DM_THREAD -> snapshot = GuardSnapshot()
+                GuardPhase.TIMED_UNLOCKED -> Unit
+                GuardPhase.IDLE -> Unit
             }
             return effects
         }
 
-        // Inside a Reel viewer while already in DM_SINGLE_REEL -> remain unblocked
+        if (snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED ||
+            snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
+        ) return effects
+
         if (snapshot.phase == GuardPhase.DM_SINGLE_REEL && signals.isInReelsViewer) {
             return effects
         }
 
-        // State A: Opening a single DM-shared Reel within the click window
         val hasPendingDmClick = nowMs <= snapshot.pendingDmReelClickUntilMs
         if (signals.isInReelsViewer && hasPendingDmClick && !signals.isReelsTabSelected) {
             snapshot = snapshot.copy(
@@ -119,18 +157,16 @@ class ReelGuardStateMachine(
             return effects
         }
 
-        // State C active timer: allow unrestricted Reels browsing until timer hits 00:00
-        if (timerActive) {
-            return effects
-        }
+        if (timerActive) return effects
 
-        // State B: Algorithmic / Non-DM Reel without active timer -> immediately block
         snapshot = snapshot.copy(
             phase = GuardPhase.ALGORITHMIC_BLOCKED,
             pendingDmReelClickUntilMs = 0L,
-            dmReelMountedAtMs = 0L
+            dmReelMountedAtMs = 0L,
+            timerEndsAtMs = 0L,
+            selectedMinutes = 0
         )
-        effects += GuardEffect.ShowConfirmationOverlay
+        if (!wasBlocking) effects += GuardEffect.ShowConfirmationOverlay
         return effects
     }
 
@@ -140,19 +176,13 @@ class ReelGuardStateMachine(
         fromIndex: Int,
         toIndex: Int
     ): GuardEffect {
-        if (snapshot.phase != GuardPhase.DM_SINGLE_REEL) {
-            return GuardEffect.None
-        }
-
-        // Ignore initial layout/inflation scroll events during the first 400ms of player mount
-        if (nowMs - snapshot.dmReelMountedAtMs < dmMountSettleMs) {
-            return GuardEffect.None
-        }
+        if (snapshot.phase != GuardPhase.DM_SINGLE_REEL) return GuardEffect.None
+        if (nowMs - snapshot.dmReelMountedAtMs < dmMountSettleMs) return GuardEffect.None
 
         val indexChanged = fromIndex >= 0 && toIndex >= 0 && fromIndex != toIndex
-        val verticalDelta = scrollDeltaY != 0
+        val meaningfulVerticalSwipe = kotlin.math.abs(scrollDeltaY) >= nextReelScrollThresholdPx
 
-        if (indexChanged || verticalDelta) {
+        if (indexChanged || meaningfulVerticalSwipe) {
             snapshot = snapshot.copy(
                 phase = GuardPhase.DM_THREAD,
                 dmReelMountedAtMs = 0L,
@@ -164,46 +194,32 @@ class ReelGuardStateMachine(
     }
 
     fun onContinueAnywayTapped(): GuardEffect {
-        if (snapshot.phase != GuardPhase.ALGORITHMIC_BLOCKED) {
-            return GuardEffect.None
-        }
+        if (snapshot.phase != GuardPhase.ALGORITHMIC_BLOCKED) return GuardEffect.None
         snapshot = snapshot.copy(phase = GuardPhase.TIME_LIMIT_SELECTION)
         return GuardEffect.ShowTimeLimitOverlay
     }
 
     fun onCancelTapped(): List<GuardEffect> {
-        snapshot = snapshot.copy(
-            phase = GuardPhase.IDLE,
-            pendingDmReelClickUntilMs = 0L,
-            dmReelMountedAtMs = 0L
-        )
+        snapshot = GuardSnapshot()
         return listOf(GuardEffect.DismissOverlay, GuardEffect.ExitReelsToHome)
     }
 
     fun onTimeLimitSelected(minutes: Int, nowMs: Long): List<GuardEffect> {
-        val clamped = minutes.coerceIn(1, 10)
+        if (snapshot.phase != GuardPhase.TIME_LIMIT_SELECTION) return emptyList()
+        val safeMinutes = minutes.coerceIn(1, 30)
         snapshot = snapshot.copy(
             phase = GuardPhase.TIMED_UNLOCKED,
-            selectedMinutes = clamped,
-            timerEndsAtMs = nowMs + clamped * 60_000L
+            selectedMinutes = safeMinutes,
+            timerEndsAtMs = nowMs + safeMinutes * 60_000L
         )
         return listOf(
             GuardEffect.DismissOverlay,
-            GuardEffect.StartCountdown(clamped)
+            GuardEffect.StartCountdown(safeMinutes)
         )
     }
 
     fun onTimerExpired(): List<GuardEffect> {
-        snapshot = snapshot.copy(
-            phase = GuardPhase.IDLE,
-            timerEndsAtMs = 0L,
-            selectedMinutes = 0,
-            pendingDmReelClickUntilMs = 0L,
-            dmReelMountedAtMs = 0L
-        )
-        return listOf(
-            GuardEffect.ShowTimesUpBanner,
-            GuardEffect.ExitReelsToHome
-        )
+        snapshot = GuardSnapshot()
+        return listOf(GuardEffect.ShowTimesUpBanner, GuardEffect.ExitReelsToHome)
     }
 }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ReelGuard</string>
-    <string name="accessibility_service_label">ReelGuard Mindful Reels Blocker</string>
-    <string name="accessibility_service_description">Monitors Instagram navigation locally on your device to keep friend-shared DM Reels uninterrupted while gating algorithmic Reels behind a mindful pause and time limit. No data leaves your device.</string>
+    <string name="accessibility_service_label">ReelGuard protection</string>
+    <string name="accessibility_service_description">With your permission, ReelGuard reads visible Instagram interface elements locally to distinguish direct-message-shared Reels from recommended Reels. It observes app-window transitions to dismiss its own pause screen when you leave Instagram; it does not read other apps’ screen content or upload screen content.</string>
 </resources>

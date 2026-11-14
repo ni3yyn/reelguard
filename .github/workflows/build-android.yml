@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: reelguard-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -38,22 +42,21 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
 
-      - name: Cache Gradle configuration
-        uses: actions/cache@v4
-        with:
-          path: ReelGuard/.gradle/configuration-cache
-          key: ${{ runner.os }}-jdk17-gradle-config-${{ hashFiles('ReelGuard/**/*.gradle*', 'ReelGuard/gradle.properties', 'ReelGuard/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-jdk17-gradle-config-
-
-      - name: Run unit tests and build APK
-        run: ./gradlew testDebugUnitTest assembleDebug
+      - name: Run unit tests, lint, and debug/release builds
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: reelguard-debug-apk
           path: ReelGuard/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK (unsigned)
+        uses: actions/upload-artifact@v4
+        with:
+          name: reelguard-release-apk-unsigned
+          path: ReelGuard/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
