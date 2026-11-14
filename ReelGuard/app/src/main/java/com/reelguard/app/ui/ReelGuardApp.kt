@@ -651,13 +651,45 @@ private fun ProtectScreen(
             )
         }
 
+        val guideInteraction = remember { MutableInteractionSource() }
+        val guidePressed by guideInteraction.collectIsPressedAsState()
+        val guideHovered by guideInteraction.collectIsHoveredAsState()
+        val guideFocused by guideInteraction.collectIsFocusedAsState()
+        val guideHighlighted = guideHovered || guideFocused
+        val guideScale by animateFloatAsState(
+            targetValue = when {
+                guidePressed -> 0.986f
+                guideHighlighted -> 1.01f
+                else -> 1f
+            },
+            animationSpec = tween(140, easing = FastOutSlowInEasing),
+            label = "guide-card-feedback"
+        )
+        val guideDepth by androidx.compose.animation.core.animateDpAsState(
+            targetValue = when {
+                guidePressed -> 2.dp
+                guideHighlighted -> 12.dp
+                else -> 9.dp
+            },
+            animationSpec = tween(140),
+            label = "guide-card-depth"
+        )
         NeumorphicPanel(
+            modifier = Modifier
+                .fillMaxWidth()
+                .scale(guideScale)
+                .clickable(
+                    interactionSource = guideInteraction,
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onGuide
+                ),
             padding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             shape = RoundedCornerShape(20.dp),
-            elevation = 9.dp
+            elevation = guideDepth
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable(onClick = onGuide),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
