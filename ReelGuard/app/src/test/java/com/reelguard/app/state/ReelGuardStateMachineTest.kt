@@ -72,7 +72,7 @@ class ReelGuardStateMachineTest {
         assertEquals(
             GuardEffect.ExecuteBackToDm,
             machine.onVerticalScrollDetected(
-                nowMs = 10_700L,
+                nowMs = 10_800L,
                 scrollDeltaY = 360,
                 fromIndex = 0,
                 toIndex = 1
