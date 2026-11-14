@@ -117,7 +117,11 @@ class OverlayManager(private val context: Context) {
         val view = object : FrameLayout(context) {
             override fun dispatchKeyEvent(event: KeyEvent): Boolean {
                 if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                    onCancelCallback?.invoke()
+                    if (currentStep == OverlayStep.TIME_LIMIT) {
+                        currentStep = OverlayStep.CONFIRMATION
+                    } else {
+                        onCancelCallback?.invoke()
+                    }
                     return true
                 }
                 return super.dispatchKeyEvent(event)
@@ -137,6 +141,7 @@ class OverlayManager(private val context: Context) {
                                 step = currentStep,
                                 onContinueAnyway = { onContinueCallback?.invoke() },
                                 onCancel = { onCancelCallback?.invoke() },
+                                onGoBack = { currentStep = OverlayStep.CONFIRMATION },
                                 onSelectMinutes = { selected -> onSelectMinutesCallback?.invoke(selected) }
                             )
                         }
@@ -199,6 +204,7 @@ private fun BlockingOverlayContent(
     step: OverlayStep,
     onContinueAnyway: () -> Unit,
     onCancel: () -> Unit,
+    onGoBack: () -> Unit,
     onSelectMinutes: (Int) -> Unit
 ) {
     Box(
@@ -221,7 +227,7 @@ private fun BlockingOverlayContent(
                 )
                 OverlayStep.TIME_LIMIT -> TimeLimitStep(
                     onSelectMinutes = onSelectMinutes,
-                    onCancel = onCancel
+                    onCancel = onGoBack
                 )
             }
         }
