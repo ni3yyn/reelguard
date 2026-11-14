@@ -45,6 +45,42 @@ class ReelGuardStateMachineTest {
     }
 
     @Test
+    fun dmSharedReel_isAllowedEvenWhenInstagramMarksReelsTabSelected() {
+        val machine = ReelGuardStateMachine(dmClickWindowMs = 2_000L)
+
+        // A Reel card is explicitly opened from inside a direct-message thread.
+        machine.onScreenEvaluated(ScreenSignals(isInDmThread = true), nowMs = 10_000L)
+        machine.onDmReelCardClicked(nowMs = 10_100L)
+
+        // Instagram may report the Reels tab as selected during the DM viewer transition.
+        val openEffects = machine.onScreenEvaluated(
+            ScreenSignals(isInReelsViewer = true, isReelsTabSelected = true),
+            nowMs = 10_350L
+        )
+
+        assertTrue(openEffects.isEmpty())
+        assertEquals(GuardPhase.DM_SINGLE_REEL, machine.snapshot.phase)
+
+        // Later tab-selection/content events must not turn this DM-origin Reel into a block.
+        assertTrue(
+            machine.onScreenEvaluated(
+                ScreenSignals(isReelsTabSelected = true),
+                nowMs = 10_500L
+            ).isEmpty()
+        )
+        assertEquals(GuardPhase.DM_SINGLE_REEL, machine.snapshot.phase)
+        assertEquals(
+            GuardEffect.ExecuteBackToDm,
+            machine.onVerticalScrollDetected(
+                nowMs = 10_700L,
+                scrollDeltaY = 360,
+                fromIndex = 0,
+                toIndex = 1
+            )
+        )
+    }
+
+    @Test
     fun algorithmicReel_showsClearIntervention_andCancelReturnsHome() {
         val machine = ReelGuardStateMachine()
         val effects = machine.onScreenEvaluated(
