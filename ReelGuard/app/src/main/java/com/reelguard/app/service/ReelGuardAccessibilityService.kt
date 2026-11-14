@@ -12,6 +12,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.reelguard.app.data.ProtectionPreferences
 import com.reelguard.app.overlay.OverlayManager
 import com.reelguard.app.state.GuardEffect
+import com.reelguard.app.state.GuardPhase
 import com.reelguard.app.state.ReelGuardStateMachine
 import com.reelguard.app.state.ScreenSignals
 
@@ -124,6 +125,10 @@ class ReelGuardAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+        if (stateMachine.snapshot.phase == GuardPhase.EXITING_TO_HOME) {
+            exitNavigationPending = true
+        }
+        exitNavigationInProgress = false
         stateMachine.onAppBackgrounded().forEach { executeEffect(it) }
         overlayManager?.dismissAll()
         instagramForeground = false
@@ -138,6 +143,9 @@ class ReelGuardAccessibilityService : AccessibilityService() {
 
     private fun leaveInstagram() {
         instagramForeground = false
+        if (stateMachine.snapshot.phase == GuardPhase.EXITING_TO_HOME) {
+            exitNavigationPending = true
+        }
         exitNavigationInProgress = false
         lastScreenSignals = ScreenSignals()
         stateMachine.onAppBackgrounded().forEach { executeEffect(it) }
