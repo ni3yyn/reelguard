@@ -18,6 +18,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -257,16 +260,42 @@ private fun TactileButton(
 ) {
     val interactionSource = androidx.compose.runtime.remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val focused by interactionSource.collectIsFocusedAsState()
+    val highlighted = hovered || focused
     val depth by animateDpAsState(
-        targetValue = if (pressed) 1.dp else if (primary) 11.dp else 7.dp,
-        animationSpec = tween(125),
+        targetValue = when {
+            pressed -> 1.dp
+            highlighted -> if (primary) 15.dp else 10.dp
+            primary -> 11.dp
+            else -> 7.dp
+        },
+        animationSpec = tween(105),
         label = "overlay-button-depth"
     )
     val pressScale by animateFloatAsState(
-        targetValue = if (pressed) 0.985f else 1f,
-        animationSpec = tween(125),
+        targetValue = when {
+            pressed -> 0.982f
+            highlighted -> 1.012f
+            else -> 1f
+        },
+        animationSpec = tween(105),
         label = "overlay-button-press"
     )
+    val buttonBrush = when {
+        primary && highlighted -> Brush.verticalGradient(
+            listOf(Color(0xFF8196A9), Color(0xFF4D657B), Color(0xFF344B60))
+        )
+        primary -> Brush.verticalGradient(
+            listOf(Color(0xFF657B91), Color(0xFF354657), Color(0xFF2F3E4D))
+        )
+        highlighted -> Brush.verticalGradient(
+            listOf(Color(0xFFFCFDFE), Color(0xFFEDF1F6), Color(0xFFDDE4EC))
+        )
+        else -> Brush.verticalGradient(
+            listOf(Color(0xFFF6F8FB), Color(0xFFE3E8EF), Color(0xFFDCE2E9))
+        )
+    }
     val shape = RoundedCornerShape(15.dp)
 
     Row(
@@ -280,17 +309,12 @@ private fun TactileButton(
                 ambientColor = if (primary) ReelGuardColors.AccentDark.copy(alpha = 0.38f) else ReelGuardColors.Shadow.copy(alpha = 0.72f),
                 spotColor = if (primary) ReelGuardColors.AccentDark.copy(alpha = 0.5f) else ReelGuardColors.Shadow
             )
-            .background(
-                if (primary) {
-                    Brush.verticalGradient(listOf(Color(0xFF657B91), Color(0xFF354657), Color(0xFF2F3E4D)))
-                } else {
-                    Brush.verticalGradient(listOf(Color(0xFFF6F8FB), Color(0xFFE3E8EF), Color(0xFFDCE2E9)))
-                },
-                shape
-            )
+            .background(buttonBrush, shape)
             .border(
                 1.dp,
-                if (primary) {
+                if (highlighted) {
+                    Brush.linearGradient(listOf(Color.White.copy(alpha = 0.96f), Color.White.copy(alpha = 0.26f)))
+                } else if (primary) {
                     Brush.linearGradient(listOf(Color.White.copy(alpha = 0.62f), Color.White.copy(alpha = 0.08f)))
                 } else {
                     Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border))
@@ -298,7 +322,12 @@ private fun TactileButton(
                 shape
             )
             .clip(shape)
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            )
             .padding(horizontal = 18.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
@@ -362,16 +391,33 @@ private fun DurationChoice(
 ) {
     val interactionSource = androidx.compose.runtime.remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val focused by interactionSource.collectIsFocusedAsState()
+    val highlighted = hovered || focused
     val depth by animateDpAsState(
-        targetValue = if (selected || pressed) 1.dp else 7.dp,
-        animationSpec = tween(130),
+        targetValue = when {
+            selected || pressed -> 1.dp
+            highlighted -> 10.dp
+            else -> 7.dp
+        },
+        animationSpec = tween(110),
         label = "duration-choice-depth"
+    )
+    val scale by animateFloatAsState(
+        targetValue = when {
+            pressed -> 0.98f
+            highlighted -> 1.012f
+            else -> 1f
+        },
+        animationSpec = tween(110),
+        label = "duration-choice-scale"
     )
     val shape = RoundedCornerShape(14.dp)
 
     Box(
         modifier = modifier
             .height(58.dp)
+            .scale(scale)
             .shadow(
                 elevation = depth,
                 shape = shape,
@@ -380,25 +426,34 @@ private fun DurationChoice(
             )
             .background(
                 Brush.verticalGradient(
-                    if (selected) {
-                        listOf(Color(0xFFD7E1EA), ReelGuardColors.AccentMuted, Color(0xFFD6DFE8))
-                    } else {
-                        listOf(Color(0xFFF7F9FB), ReelGuardColors.SurfaceRaised, Color(0xFFE1E6ED))
+                    when {
+                        selected -> listOf(Color(0xFFD7E1EA), ReelGuardColors.AccentMuted, Color(0xFFD6DFE8))
+                        highlighted -> listOf(Color(0xFFFCFDFE), ReelGuardColors.SurfaceRaised, Color(0xFFE4E9F0))
+                        else -> listOf(Color(0xFFF7F9FB), ReelGuardColors.SurfaceRaised, Color(0xFFE1E6ED))
                     }
                 ),
                 shape
             )
             .border(
                 1.dp,
-                if (selected) {
-                    Brush.linearGradient(listOf(ReelGuardColors.Accent.copy(alpha = 0.82f), Color.White.copy(alpha = 0.6f)))
-                } else {
-                    Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border))
+                when {
+                    selected -> Brush.linearGradient(
+                        listOf(ReelGuardColors.Accent.copy(alpha = 0.9f), Color.White.copy(alpha = 0.8f))
+                    )
+                    highlighted -> Brush.linearGradient(
+                        listOf(Color.White, ReelGuardColors.Accent.copy(alpha = 0.24f))
+                    )
+                    else -> Brush.linearGradient(listOf(Color.White, ReelGuardColors.Border))
                 },
                 shape
             )
             .clip(shape)
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            ),
         contentAlignment = Alignment.Center
     ) {
         Text(
