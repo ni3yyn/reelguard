@@ -31,6 +31,8 @@ class ReelGuardAccessibilityService : AccessibilityService() {
     private var activeTimer: CountDownTimer? = null
     private var lastScreenSignals = ScreenSignals()
     private var instagramForeground = false
+    private var exitNavigationPending = false
+    private var exitNavigationInProgress = false
     private var overlayRetryAfterMs = 0L
     private var lastMissingPermissionNoticeMs = 0L
 
@@ -67,6 +69,7 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         }
 
         instagramForeground = true
+        if (exitNavigationPending) startExitReelsNavigation()
         val nowMs = SystemClock.elapsedRealtime()
         val eventType = event.eventType
 
@@ -135,6 +138,7 @@ class ReelGuardAccessibilityService : AccessibilityService() {
 
     private fun leaveInstagram() {
         instagramForeground = false
+        exitNavigationInProgress = false
         lastScreenSignals = ScreenSignals()
         stateMachine.onAppBackgrounded().forEach { executeEffect(it) }
         overlayManager?.dismiss()
@@ -196,7 +200,7 @@ class ReelGuardAccessibilityService : AccessibilityService() {
                 }
             }
 
-            GuardEffect.ExitReelsToHome -> exitReelsBackToHome()
+            GuardEffect.ExitReelsToHome -> requestExitReelsNavigation()
 
             is GuardEffect.StartCountdown -> {
                 val durationMs = effect.minutes * 60_000L
@@ -238,7 +242,16 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         return root.packageName?.toString() == INSTAGRAM_PACKAGE
     }
 
-    private fun exitReelsBackToHome() {
+    private fun requestExitReelsNavigation() {
+        exitNavigationPending = true
+        startExitReelsNavigation()
+    }
+
+    private fun startExitReelsNavigation() {
+        if (!instagramForeground || exitNavigationInProgress) return
+
+        exitNavigationPending = false
+        exitNavigationInProgress = true
         // Remove the full-screen overlay first. Querying rootInActiveWindow immediately can
         // still return ReelGuard's own overlay window instead of Instagram underneath it.
         overlayManager?.dismiss()
@@ -247,20 +260,30 @@ class ReelGuardAccessibilityService : AccessibilityService() {
 
     private fun attemptExitReelsBackToHome(attempt: Int) {
         mainHandler.postDelayed({
-            if (!instagramForeground) return@postDelayed
+            if (!instagramForeground) {
+                exitNavigationInProgress = false
+                exitNavigationPending = true
+                return@postDelayed
+            }
 
             val root = findInstagramRoot()
             if (root == null) {
                 // The last confirmed Instagram surface is still a Reel. A guarded global Back
                 // is safer than leaving the user trapped behind a dismissed overlay.
                 if (lastScreenSignals.isReelsSurface) performGlobalAction(GLOBAL_ACTION_BACK)
-                if (attempt < 2) attemptExitReelsBackToHome(attempt + 1)
+                if (attempt < 2) {
+                    attemptExitReelsBackToHome(attempt + 1)
+                } else {
+                    scheduleExitRetry()
+                }
                 return@postDelayed
             }
 
             val signals = inspectScreenSignals(root, "")
             lastScreenSignals = signals
             if (!signals.isReelsSurface) {
+                exitNavigationInProgress = false
+                exitNavigationPending = false
                 stateMachine.onScreenEvaluated(signals, SystemClock.elapsedRealtime())
                     .forEach { executeEffect(it) }
                 safeRecycle(root)
@@ -283,14 +306,27 @@ class ReelGuardAccessibilityService : AccessibilityService() {
             homeNode?.let(::safeRecycle)
             safeRecycle(root)
 
-            // Retry once the UI has had time to react. If Instagram does not expose a usable
-            // Home tab, fall back to Android's Back action while Instagram is still verified
-            // as foreground and still displaying a Reel.
+            // Prefer tapping Instagram's own Home tab; only fall back to Back when it is
+            // absent or has not moved us away from a verified Reel surface.
             if (!homeSelected || attempt == 2) {
                 performGlobalAction(GLOBAL_ACTION_BACK)
             }
-            if (attempt < 2) attemptExitReelsBackToHome(attempt + 1)
+            if (attempt < 2) {
+                attemptExitReelsBackToHome(attempt + 1)
+            } else {
+                scheduleExitRetry()
+            }
         }, if (attempt == 0) 220L else 420L)
+    }
+
+    private fun scheduleExitRetry() {
+        exitNavigationInProgress = false
+        exitNavigationPending = true
+        mainHandler.postDelayed({
+            if (instagramForeground && exitNavigationPending) {
+                startExitReelsNavigation()
+            }
+        }, 900L)
     }
 
     private fun findInstagramRoot(): AccessibilityNodeInfo? {
