@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -70,7 +71,7 @@ class OverlayManager(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // Full-screen blocking overlay state
-    private var blockingView: ComposeView? = null
+    private var blockingView: FrameLayout? = null
     private var blockingLifecycleOwner: OverlayLifecycleOwner? = null
     private var currentStep by mutableStateOf(OverlayStep.CONFIRMATION)
 
@@ -145,7 +146,7 @@ class OverlayManager(private val context: Context) {
         val owner = OverlayLifecycleOwner().also { it.onCreate() }
         blockingLifecycleOwner = owner
 
-        val view = object : ComposeView(context) {
+        val view = object : FrameLayout(context) {
             override fun dispatchKeyEvent(event: KeyEvent): Boolean {
                 if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
                     onCancelCallback?.invoke()
@@ -154,21 +155,31 @@ class OverlayManager(private val context: Context) {
                 return super.dispatchKeyEvent(event)
             }
         }.apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            isFocusable = true
+            isFocusableInTouchMode = true
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
 
-            setContent {
-                ReelGuardTheme {
-                    BlockingOverlayContent(
-                        step = currentStep,
-                        onContinueAnyway = { onContinueCallback?.invoke() },
-                        onCancel = { onCancelCallback?.invoke() },
-                        onSelectMinutes = { minutes -> onSelectMinutesCallback?.invoke(minutes) }
-                    )
-                }
-            }
+            addView(
+                ComposeView(context).apply {
+                    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                    setContent {
+                        ReelGuardTheme {
+                            BlockingOverlayContent(
+                                step = currentStep,
+                                onContinueAnyway = { onContinueCallback?.invoke() },
+                                onCancel = { onCancelCallback?.invoke() },
+                                onSelectMinutes = { minutes -> onSelectMinutesCallback?.invoke(minutes) }
+                            )
+                        }
+                    }
+                },
+                FrameLayout.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT
+                )
+            )
         }
 
         val layoutParams = WindowManager.LayoutParams(
