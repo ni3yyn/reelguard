@@ -3,6 +3,7 @@ package com.reelguard.app.ui
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
