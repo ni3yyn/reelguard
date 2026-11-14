@@ -123,8 +123,10 @@ class OverlayManager(private val context: Context) {
 
         val view = object : FrameLayout(context) {
             override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-                if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                    onCancelCallback?.invoke()
+                if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+                    if (event.action == KeyEvent.ACTION_UP) onCancelCallback?.invoke()
+                    // Consume both halves of the key sequence so Android cannot dispatch
+                    // a second Back into Compose/system navigation behind the overlay.
                     return true
                 }
                 return super.dispatchKeyEvent(event)
