@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main, "rebuild/**"]
+    branches: [main]
     paths:
       - "ReelGuard/**"
       - ".github/workflows/build-android.yml"
@@ -15,6 +15,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: reelguard-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
