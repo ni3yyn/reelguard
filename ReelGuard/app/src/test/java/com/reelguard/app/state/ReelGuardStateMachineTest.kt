@@ -45,6 +45,95 @@ class ReelGuardStateMachineTest {
     }
 
     @Test
+    fun dmSharedReel_isAllowedEvenWhenInstagramMarksReelsTabSelected() {
+        val machine = ReelGuardStateMachine(dmClickWindowMs = 2_000L)
+
+        // A Reel card is explicitly opened from inside a direct-message thread.
+        machine.onScreenEvaluated(ScreenSignals(isInDmThread = true), nowMs = 10_000L)
+        machine.onDmReelCardClicked(nowMs = 10_100L)
+
+        // Instagram may report the Reels tab as selected during the DM viewer transition.
+        val openEffects = machine.onScreenEvaluated(
+            ScreenSignals(isInReelsViewer = true, isReelsTabSelected = true),
+            nowMs = 10_350L
+        )
+
+        assertTrue(openEffects.isEmpty())
+        assertEquals(GuardPhase.DM_SINGLE_REEL, machine.snapshot.phase)
+
+        // Later tab-selection/content events must not turn this DM-origin Reel into a block.
+        assertTrue(
+            machine.onScreenEvaluated(
+                ScreenSignals(isReelsTabSelected = true),
+                nowMs = 10_500L
+            ).isEmpty()
+        )
+        assertEquals(GuardPhase.DM_SINGLE_REEL, machine.snapshot.phase)
+        assertEquals(
+            GuardEffect.ExecuteBackToDm,
+            machine.onVerticalScrollDetected(
+                nowMs = 10_800L,
+                scrollDeltaY = 360,
+                fromIndex = 0,
+                toIndex = 1
+            )
+        )
+    }
+
+    @Test
+    fun dmViewerBackStackMarker_allowsReelWithoutDetectingCardClick() {
+        val machine = ReelGuardStateMachine()
+
+        val openEffects = machine.onScreenEvaluated(
+            ScreenSignals(
+                isInDmThread = true,
+                isInReelsViewer = true,
+                isReelsTabSelected = true,
+                isDmOriginReel = true
+            ),
+            nowMs = 12_000L
+        )
+
+        assertTrue(openEffects.isEmpty())
+        assertEquals(GuardPhase.DM_SINGLE_REEL, machine.snapshot.phase)
+
+        // Instagram can drop the hidden toolbar from later accessibility snapshots.
+        // Once the DM-origin route was established, tab-selection updates must not relock it.
+        assertTrue(
+            machine.onScreenEvaluated(
+                ScreenSignals(isInReelsViewer = true, isReelsTabSelected = true),
+                nowMs = 12_200L
+            ).isEmpty()
+        )
+        assertEquals(GuardPhase.DM_SINGLE_REEL, machine.snapshot.phase)
+        assertEquals(
+            GuardEffect.ExecuteBackToDm,
+            machine.onVerticalScrollDetected(
+                nowMs = 12_500L,
+                scrollDeltaY = 360,
+                fromIndex = 0,
+                toIndex = 1
+            )
+        )
+    }
+
+    @Test
+    fun feedViewerWithoutDmNavigationMarker_remainsBlockedAfterVisitingDm() {
+        val machine = ReelGuardStateMachine()
+        machine.onScreenEvaluated(ScreenSignals(isInDmThread = true), nowMs = 20_000L)
+        machine.onScreenEvaluated(ScreenSignals(), nowMs = 20_100L)
+
+        assertEquals(
+            listOf(GuardEffect.ShowConfirmationOverlay),
+            machine.onScreenEvaluated(
+                ScreenSignals(isInReelsViewer = true),
+                nowMs = 20_200L
+            )
+        )
+        assertEquals(GuardPhase.ALGORITHMIC_BLOCKED, machine.snapshot.phase)
+    }
+
+    @Test
     fun algorithmicReel_showsClearIntervention_andCancelReturnsHome() {
         val machine = ReelGuardStateMachine()
         val effects = machine.onScreenEvaluated(
@@ -57,6 +146,20 @@ class ReelGuardStateMachineTest {
         assertEquals(
             listOf(GuardEffect.DismissOverlay, GuardEffect.ExitReelsToHome),
             machine.onCancelTapped()
+        )
+        assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
+        assertTrue(machine.onAppBackgrounded().isEmpty())
+        assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
+        assertTrue(
+            machine.onScreenEvaluated(
+                ScreenSignals(isInReelsViewer = true, isReelsTabSelected = true),
+                nowMs = 5_100L
+            ).isEmpty()
+        )
+        assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
+        assertEquals(
+            listOf(GuardEffect.DismissOverlay),
+            machine.onScreenEvaluated(ScreenSignals(), nowMs = 5_200L)
         )
         assertEquals(GuardPhase.IDLE, machine.snapshot.phase)
     }
@@ -80,7 +183,13 @@ class ReelGuardStateMachineTest {
             listOf(GuardEffect.ShowTimesUpBanner, GuardEffect.ExitReelsToHome),
             machine.onTimerExpired()
         )
-        assertEquals(GuardPhase.IDLE, machine.snapshot.phase)
+        assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
+        assertTrue(machine.onAppBackgrounded().isEmpty())
+        assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
+        assertTrue(
+            machine.onScreenEvaluated(ScreenSignals(isInReelsViewer = true), 60_001L).isEmpty()
+        )
+        assertEquals(GuardPhase.EXITING_TO_HOME, machine.snapshot.phase)
     }
 
     @Test

@@ -6,12 +6,15 @@ import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.reelguard.app.data.ProtectionPreferences
 import com.reelguard.app.overlay.OverlayManager
 import com.reelguard.app.state.GuardEffect
+import com.reelguard.app.state.InstagramNavigationClassifier
+import com.reelguard.app.state.GuardPhase
 import com.reelguard.app.state.ReelGuardStateMachine
 import com.reelguard.app.state.ScreenSignals
 
@@ -30,7 +33,10 @@ class ReelGuardAccessibilityService : AccessibilityService() {
     private var overlayManager: OverlayManager? = null
     private var activeTimer: CountDownTimer? = null
     private var lastScreenSignals = ScreenSignals()
+    private var lastLoggedViewerRoute: String? = null
     private var instagramForeground = false
+    private var exitNavigationPending = false
+    private var exitNavigationInProgress = false
     private var overlayRetryAfterMs = 0L
     private var lastMissingPermissionNoticeMs = 0L
 
@@ -67,6 +73,7 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         }
 
         instagramForeground = true
+        if (exitNavigationPending) startExitReelsNavigation()
         val nowMs = SystemClock.elapsedRealtime()
         val eventType = event.eventType
 
@@ -121,6 +128,10 @@ class ReelGuardAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+        if (stateMachine.snapshot.phase == GuardPhase.EXITING_TO_HOME) {
+            exitNavigationPending = true
+        }
+        exitNavigationInProgress = false
         stateMachine.onAppBackgrounded().forEach { executeEffect(it) }
         overlayManager?.dismissAll()
         instagramForeground = false
@@ -135,6 +146,10 @@ class ReelGuardAccessibilityService : AccessibilityService() {
 
     private fun leaveInstagram() {
         instagramForeground = false
+        if (stateMachine.snapshot.phase == GuardPhase.EXITING_TO_HOME) {
+            exitNavigationPending = true
+        }
+        exitNavigationInProgress = false
         lastScreenSignals = ScreenSignals()
         stateMachine.onAppBackgrounded().forEach { executeEffect(it) }
         overlayManager?.dismiss()
@@ -196,7 +211,7 @@ class ReelGuardAccessibilityService : AccessibilityService() {
                 }
             }
 
-            GuardEffect.ExitReelsToHome -> exitReelsBackToHome()
+            GuardEffect.ExitReelsToHome -> requestExitReelsNavigation()
 
             is GuardEffect.StartCountdown -> {
                 val durationMs = effect.minutes * 60_000L
@@ -238,30 +253,111 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         return root.packageName?.toString() == INSTAGRAM_PACKAGE
     }
 
-    private fun exitReelsBackToHome() {
-        mainHandler.post {
-            val root = runCatching { rootInActiveWindow }.getOrNull() ?: return@post
-            if (root.packageName?.toString() != INSTAGRAM_PACKAGE) return@post
+    private fun requestExitReelsNavigation() {
+        exitNavigationPending = true
+        startExitReelsNavigation()
+    }
+
+    private fun startExitReelsNavigation() {
+        if (!instagramForeground || exitNavigationInProgress) return
+
+        exitNavigationPending = false
+        exitNavigationInProgress = true
+        // Remove the full-screen overlay first. Querying rootInActiveWindow immediately can
+        // still return ReelGuard's own overlay window instead of Instagram underneath it.
+        overlayManager?.dismiss()
+        attemptExitReelsBackToHome(attempt = 0)
+    }
+
+    private fun attemptExitReelsBackToHome(attempt: Int) {
+        mainHandler.postDelayed({
+            if (!instagramForeground) {
+                exitNavigationInProgress = false
+                exitNavigationPending = true
+                return@postDelayed
+            }
+
+            val root = findInstagramRoot()
+            if (root == null) {
+                // The last confirmed Instagram surface is still a Reel. A guarded global Back
+                // is safer than leaving the user trapped behind a dismissed overlay.
+                if (lastScreenSignals.isReelsSurface) performGlobalAction(GLOBAL_ACTION_BACK)
+                if (attempt < 2) {
+                    attemptExitReelsBackToHome(attempt + 1)
+                } else {
+                    scheduleExitRetry()
+                }
+                return@postDelayed
+            }
 
             val signals = inspectScreenSignals(root, "")
-            if (!signals.isReelsSurface) return@post
+            lastScreenSignals = signals
+            if (!signals.isReelsSurface) {
+                exitNavigationInProgress = false
+                exitNavigationPending = false
+                stateMachine.onScreenEvaluated(signals, SystemClock.elapsedRealtime())
+                    .forEach { executeEffect(it) }
+                safeRecycle(root)
+                return@postDelayed
+            }
 
             val homeNode = findFirstMatchingNode(root) { node ->
                 val id = node.viewIdResourceName.orEmpty().lowercase()
                 val description = node.contentDescription?.toString().orEmpty().lowercase()
-                val isHomeId = id.endsWith(":id/feed_tab") || id.contains("home_tab")
-                val isHomeDescription = description == "home" || description.startsWith("home,")
+                val isHomeId = id.endsWith(":id/feed_tab") ||
+                    id.contains("home_tab") ||
+                    id.contains("feed_tab")
+                val isHomeDescription = description == "home" ||
+                    description.startsWith("home,") ||
+                    description.startsWith("home ")
                 node.isClickable && (isHomeId || isHomeDescription)
             }
 
-            if (homeNode != null) {
-                homeNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                safeRecycle(homeNode)
-            } else {
-                // Never send a global Back action unless Instagram is foreground and still on a Reel surface.
+            val homeSelected = homeNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+            homeNode?.let(::safeRecycle)
+            safeRecycle(root)
+
+            // Prefer tapping Instagram's own Home tab; only fall back to Back when it is
+            // absent or has not moved us away from a verified Reel surface.
+            if (!homeSelected || attempt == 2) {
                 performGlobalAction(GLOBAL_ACTION_BACK)
             }
-        }
+            if (attempt < 2) {
+                attemptExitReelsBackToHome(attempt + 1)
+            } else {
+                scheduleExitRetry()
+            }
+        }, if (attempt == 0) 220L else 420L)
+    }
+
+    private fun scheduleExitRetry() {
+        exitNavigationInProgress = false
+        exitNavigationPending = true
+        mainHandler.postDelayed({
+            if (instagramForeground && exitNavigationPending) {
+                startExitReelsNavigation()
+            }
+        }, 900L)
+    }
+
+    private fun findInstagramRoot(): AccessibilityNodeInfo? {
+        val windowRoot = runCatching {
+            windows.firstNotNullOfOrNull { window ->
+                val candidate = window.root ?: return@firstNotNullOfOrNull null
+                if (candidate.packageName?.toString() == INSTAGRAM_PACKAGE) {
+                    candidate
+                } else {
+                    safeRecycle(candidate)
+                    null
+                }
+            }
+        }.getOrNull()
+        if (windowRoot != null) return windowRoot
+
+        val activeRoot = runCatching { rootInActiveWindow }.getOrNull() ?: return null
+        if (activeRoot.packageName?.toString() == INSTAGRAM_PACKAGE) return activeRoot
+        safeRecycle(activeRoot)
+        return null
     }
 
     private fun isClickOnDmSharedReel(event: AccessibilityEvent): Boolean {
@@ -269,27 +365,42 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         if (root.packageName?.toString() != INSTAGRAM_PACKAGE) return false
         if (!detectDmThread(root, event.className?.toString().orEmpty())) return false
 
-        val source = runCatching { event.source }.getOrNull()
-        if (source != null) {
-            val matched = subtreeMatches(source, maxDepth = 5, maxNodes = 36) { node ->
-                val id = node.viewIdResourceName.orEmpty().lowercase()
-                val description = node.contentDescription?.toString().orEmpty().lowercase()
-                val text = node.text?.toString().orEmpty().lowercase()
-                id.contains("direct_reel") ||
-                    id.contains("reel_share") ||
-                    id.contains("clips_share") ||
-                    id.contains("media_share") ||
-                    description.contains("reel") ||
-                    description.contains("shared video") ||
-                    text.contains("watch reel")
-            }
-            safeRecycle(source)
-            if (matched) return true
+        val source = runCatching { event.source }.getOrNull() ?: return false
+        val isSharedReelPreview: (AccessibilityNodeInfo) -> Boolean = { node ->
+            InstagramNavigationClassifier.isDmSharedReelPreview(node.viewIdResourceName)
         }
 
-        val eventText = event.text.joinToString(" ").lowercase()
-        val eventDescription = event.contentDescription?.toString().orEmpty().lowercase()
-        return eventDescription.contains("reel") || eventText.contains("reel")
+        // Instagram reports the thumbnail or nested text as the click source. The stable
+        // clips_share_preview_container ID usually lives on a clickable ancestor.
+        val matched = ancestorMatches(source, maxDepth = 8, predicate = isSharedReelPreview) ||
+            subtreeMatches(source, maxDepth = 6, maxNodes = 64, predicate = isSharedReelPreview)
+        safeRecycle(source)
+        return matched
+    }
+
+    private fun ancestorMatches(
+        source: AccessibilityNodeInfo,
+        maxDepth: Int,
+        predicate: (AccessibilityNodeInfo) -> Boolean
+    ): Boolean {
+        var current: AccessibilityNodeInfo? = runCatching {
+            AccessibilityNodeInfo.obtain(source)
+        }.getOrNull() ?: return false
+
+        for (depth in 0..maxDepth) {
+            val node = current ?: return false
+            val matched = predicate(node)
+            val parent = if (!matched && depth < maxDepth) {
+                runCatching { node.parent }.getOrNull()
+            } else {
+                null
+            }
+            safeRecycle(node)
+            if (matched) return true
+            current = parent
+        }
+        current?.let(::safeRecycle)
+        return false
     }
 
     private fun inspectScreenSignals(root: AccessibilityNodeInfo, eventClass: String): ScreenSignals {
@@ -299,17 +410,25 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         var exploreOrStoryReel = false
         var homeSuggestedFullScreenReel = false
 
+        // Instagram's DM-opened Reel keeps direct_thread_toolbar as a hidden sibling of
+        // clips_viewer_fragment_container inside the content host. Do not discard invisible
+        // nodes here: that hidden toolbar is the navigation/back-stack provenance marker.
+        val contentChildViewIds = mutableSetOf<String>()
         var visited = 0
-        val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
-        queue.add(root to 0)
-
+        val queue = ArrayDeque<Triple<AccessibilityNodeInfo, Int, String>>()
+        queue.add(Triple(root, 0, ""))
         while (queue.isNotEmpty() && visited < MAX_TRAVERSAL_NODES) {
-            val (node, depth) = queue.removeFirst()
+            val (node, depth, parentId) = queue.removeFirst()
             visited++
 
             val id = node.viewIdResourceName.orEmpty().lowercase()
+            val normalizedId = id.substringAfterLast('/')
             val description = node.contentDescription?.toString().orEmpty().lowercase()
             val text = node.text?.toString().orEmpty().lowercase()
+
+            if (parentId == "content" && normalizedId.isNotBlank()) {
+                contentChildViewIds += normalizedId
+            }
 
             if (
                 id.contains("row_thread_composer") ||
@@ -346,7 +465,7 @@ class ReelGuardAccessibilityService : AccessibilityService() {
             if (depth < MAX_TRAVERSAL_DEPTH) {
                 for (index in 0 until node.childCount) {
                     val child = node.getChild(index) ?: continue
-                    queue.add(child to depth + 1)
+                    queue.add(Triple(child, depth + 1, normalizedId))
                 }
             }
 
@@ -354,8 +473,35 @@ class ReelGuardAccessibilityService : AccessibilityService() {
         }
 
         while (queue.isNotEmpty()) {
-            val (remaining, _) = queue.removeFirst()
+            val (remaining, _, _) = queue.removeFirst()
             if (remaining !== root) safeRecycle(remaining)
+        }
+
+        val dmOriginReel = InstagramNavigationClassifier.isDmOriginReel(
+            contentChildViewIds = contentChildViewIds,
+            isReelsViewer = inReelsViewer
+        )
+        if (dmOriginReel) inDmThread = true
+
+        // Debug builds emit only route IDs/booleans (never message text, usernames or media data),
+        // making it possible to validate this classifier against a real Instagram update.
+        if (inReelsViewer) {
+            val route = when {
+                dmOriginReel -> "DM_SHARED_REEL"
+                reelsTabSelected -> "REELS_TAB"
+                else -> "NON_DM_VIEWER"
+            }
+            val isDebuggable =
+                (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            if (isDebuggable && route != lastLoggedViewerRoute) {
+                Log.d(
+                    "ReelGuardNavigation",
+                    "viewerOrigin=$route; contentChildIds=$contentChildViewIds; reelsTabSelected=$reelsTabSelected"
+                )
+            }
+            lastLoggedViewerRoute = route
+        } else {
+            lastLoggedViewerRoute = null
         }
 
         return ScreenSignals(
@@ -363,7 +509,8 @@ class ReelGuardAccessibilityService : AccessibilityService() {
             isInReelsViewer = inReelsViewer,
             isReelsTabSelected = reelsTabSelected,
             isExploreOrStoryReel = exploreOrStoryReel,
-            isHomeSuggestedFullScreenReel = homeSuggestedFullScreenReel
+            isHomeSuggestedFullScreenReel = homeSuggestedFullScreenReel,
+            isDmOriginReel = dmOriginReel
         )
     }
 

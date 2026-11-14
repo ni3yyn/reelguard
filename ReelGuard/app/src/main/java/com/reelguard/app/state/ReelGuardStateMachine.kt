@@ -6,6 +6,7 @@ enum class GuardPhase {
     DM_SINGLE_REEL,
     ALGORITHMIC_BLOCKED,
     TIME_LIMIT_SELECTION,
+    EXITING_TO_HOME,
     TIMED_UNLOCKED
 }
 
@@ -14,7 +15,8 @@ data class ScreenSignals(
     val isInReelsViewer: Boolean = false,
     val isReelsTabSelected: Boolean = false,
     val isExploreOrStoryReel: Boolean = false,
-    val isHomeSuggestedFullScreenReel: Boolean = false
+    val isHomeSuggestedFullScreenReel: Boolean = false,
+    val isDmOriginReel: Boolean = false
 ) {
     val isReelsSurface: Boolean
         get() = isInReelsViewer ||
@@ -79,13 +81,13 @@ class ReelGuardStateMachine(
             snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED ||
                 snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
 
-        snapshot = if (snapshot.phase == GuardPhase.TIMED_UNLOCKED) {
-            snapshot.copy(
+        snapshot = when (snapshot.phase) {
+            GuardPhase.TIMED_UNLOCKED -> snapshot.copy(
                 pendingDmReelClickUntilMs = 0L,
                 dmReelMountedAtMs = 0L
             )
-        } else {
-            GuardSnapshot()
+            GuardPhase.EXITING_TO_HOME -> snapshot
+            else -> GuardSnapshot()
         }
 
         return if (hadBlockingOverlay) listOf(GuardEffect.DismissOverlay) else emptyList()
@@ -101,6 +103,37 @@ class ReelGuardStateMachine(
 
     fun onScreenEvaluated(signals: ScreenSignals, nowMs: Long): List<GuardEffect> {
         val effects = mutableListOf<GuardEffect>()
+
+        // Keep the intervention dismissed while the explicit Home navigation is in flight.
+        // Instagram can emit several more Reel events before its navigation finishes.
+        if (snapshot.phase == GuardPhase.EXITING_TO_HOME) {
+            if (!signals.isReelsSurface) {
+                snapshot = GuardSnapshot()
+                effects += GuardEffect.DismissOverlay
+            }
+            return effects
+        }
+
+        // This is stronger than tab selection or a tap event: Instagram's DM viewer
+        // retains a hidden direct_thread_toolbar beside its clips viewer container.
+        // Trust that route provenance even when clips_tab is also reported selected.
+        if (signals.isDmOriginReel && signals.isInReelsViewer) {
+            val hadBlockingOverlay =
+                snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED ||
+                    snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
+            val mountedAtMs = if (
+                snapshot.phase == GuardPhase.DM_SINGLE_REEL && snapshot.dmReelMountedAtMs > 0L
+            ) snapshot.dmReelMountedAtMs else nowMs
+
+            snapshot = snapshot.copy(
+                phase = GuardPhase.DM_SINGLE_REEL,
+                pendingDmReelClickUntilMs = 0L,
+                dmReelMountedAtMs = mountedAtMs
+            )
+            if (hadBlockingOverlay) effects += GuardEffect.DismissOverlay
+            return effects
+        }
+
         val wasBlocking = snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED ||
             snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
         val timerActive = snapshot.phase == GuardPhase.TIMED_UNLOCKED &&
@@ -116,7 +149,8 @@ class ReelGuardStateMachine(
             signals.isInDmThread &&
             !signals.isInReelsViewer &&
             snapshot.phase != GuardPhase.ALGORITHMIC_BLOCKED &&
-            snapshot.phase != GuardPhase.TIME_LIMIT_SELECTION
+            snapshot.phase != GuardPhase.TIME_LIMIT_SELECTION &&
+            snapshot.phase != GuardPhase.DM_SINGLE_REEL
         ) {
             snapshot = snapshot.copy(
                 phase = GuardPhase.DM_THREAD,
@@ -134,6 +168,7 @@ class ReelGuardStateMachine(
                 GuardPhase.DM_SINGLE_REEL -> snapshot = GuardSnapshot()
                 GuardPhase.DM_THREAD -> snapshot = GuardSnapshot()
                 GuardPhase.TIMED_UNLOCKED -> Unit
+                GuardPhase.EXITING_TO_HOME -> Unit
                 GuardPhase.IDLE -> Unit
             }
             return effects
@@ -143,12 +178,15 @@ class ReelGuardStateMachine(
             snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
         ) return effects
 
-        if (snapshot.phase == GuardPhase.DM_SINGLE_REEL && signals.isInReelsViewer) {
+        // The Reels tab can remain marked selected even when a Reel was opened from a DM.
+        // A verified tap on a Reel inside a DM is the stronger signal: honor it for the
+        // entire entry transition instead of letting Instagram's selected tab override it.
+        if (snapshot.phase == GuardPhase.DM_SINGLE_REEL && signals.isReelsSurface) {
             return effects
         }
 
         val hasPendingDmClick = nowMs <= snapshot.pendingDmReelClickUntilMs
-        if (signals.isInReelsViewer && hasPendingDmClick && !signals.isReelsTabSelected) {
+        if (signals.isReelsSurface && hasPendingDmClick) {
             snapshot = snapshot.copy(
                 phase = GuardPhase.DM_SINGLE_REEL,
                 pendingDmReelClickUntilMs = 0L,
@@ -200,7 +238,7 @@ class ReelGuardStateMachine(
     }
 
     fun onCancelTapped(): List<GuardEffect> {
-        snapshot = GuardSnapshot()
+        snapshot = GuardSnapshot(phase = GuardPhase.EXITING_TO_HOME)
         return listOf(GuardEffect.DismissOverlay, GuardEffect.ExitReelsToHome)
     }
 
@@ -219,7 +257,7 @@ class ReelGuardStateMachine(
     }
 
     fun onTimerExpired(): List<GuardEffect> {
-        snapshot = GuardSnapshot()
+        snapshot = GuardSnapshot(phase = GuardPhase.EXITING_TO_HOME)
         return listOf(GuardEffect.ShowTimesUpBanner, GuardEffect.ExitReelsToHome)
     }
 }
