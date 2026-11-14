@@ -80,13 +80,13 @@ class ReelGuardStateMachine(
             snapshot.phase == GuardPhase.ALGORITHMIC_BLOCKED ||
                 snapshot.phase == GuardPhase.TIME_LIMIT_SELECTION
 
-        snapshot = if (snapshot.phase == GuardPhase.TIMED_UNLOCKED) {
-            snapshot.copy(
+        snapshot = when (snapshot.phase) {
+            GuardPhase.TIMED_UNLOCKED -> snapshot.copy(
                 pendingDmReelClickUntilMs = 0L,
                 dmReelMountedAtMs = 0L
             )
-        } else {
-            GuardSnapshot()
+            GuardPhase.EXITING_TO_HOME -> snapshot
+            else -> GuardSnapshot()
         }
 
         return if (hadBlockingOverlay) listOf(GuardEffect.DismissOverlay) else emptyList()
